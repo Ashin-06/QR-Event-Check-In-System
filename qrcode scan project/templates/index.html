@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>QR Scanner + Live CSV Log</title>
+  <link rel="stylesheet" href="https://cdn.datatables.net/1.13.5/css/jquery.dataTables.min.css"/>
+  <style>
+    body { font-family: Arial, sans-serif; padding:20px; text-align:center; }
+    video { width:100%; max-width:500px; border:2px solid #444; border-radius:8px; }
+    button { margin-top:10px; padding:10px 20px; font-size:1rem; }
+    #status { margin-top:15px; font-size:1.2rem; }
+    #table-container { margin-top:30px; width:100%; max-width:900px; margin:0 auto; }
+  </style>
+</head>
+<body>
+  <h1>QR Scanner + Live CSV Log</h1>
+
+  <video id="scanner" autoplay playsinline muted></video><br>
+  <button id="restart-btn">Restart Scan</button>
+  <div id="status">Initializing…</div>
+
+  <div id="table-container">
+    <h2>Scanned Log</h2>
+    <table id="csv-table" class="display" style="width:100%">
+      <thead>
+        <tr>
+          <th>QR Data</th>
+          <th>Scan Count</th>
+          <th>Last Timestamp</th>
+          <th>All Timestamps</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </div>
+
+  <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+  <script src="https://code.jquery.com/jquery-3.7.0.min.js"></script>
+  <script src="https://cdn.datatables.net/1.13.5/js/jquery.dataTables.min.js"></script>
+  <script type="module">
+    import QrScanner from '/static/js/qr-scanner.min.js';
+    QrScanner.WORKER_PATH = '/static/js/qr-scanner-worker.min.js';
+
+    const video      = document.getElementById('scanner');
+    const statusDiv  = document.getElementById('status');
+    const restartBtn = document.getElementById('restart-btn');
+    let processing   = false;
+
+    function updateStatus(msg) {
+      statusDiv.textContent = `${msg} [${new Date().toLocaleTimeString()}]`;
+    }
+
+    // QR Scanner setup
+    const scanner = new QrScanner(video, result => {
+      if (!processing) {
+        processing = true;
+        scanner.stop();
+        updateStatus('Processing scan...');
+        fetch('/scan', {
+          method: 'POST',
+          headers: {'Content-Type':'application/json'},
+          body: JSON.stringify({qr_data: result})
+        })
+        .then(r => r.json())
+        .then(data => updateStatus(data.message))
+        .catch(e => updateStatus('Error: ' + e.message));
+      }
+    });
+    navigator.mediaDevices.getUserMedia({
+      video: { facingMode:'environment', width:{ideal:640}, height:{ideal:480} }
+    })
+    .then(s => {
+      video.srcObject = s;
+      video.play();
+      scanner.start();
+      updateStatus('Scanning...');
+    })
+    .catch(e => updateStatus('Camera error: ' + e.message));
+
+    restartBtn.addEventListener('click', () => {
+      if (!processing) {
+        scanner.start();
+        updateStatus('Scanning...');
+      }
+    });
+
+    // DataTable initialization
+    const csvTable = $('#csv-table').DataTable({
+      ajax: { url:'/data_csv', dataSrc: '' },
+      columns: [
+        { data: 'QR Data' },
+        { data: 'Scan Count' },
+        { data: 'Last Timestamp' },
+        { data: 'Timestamps' }
+      ],
+      order: [[2, 'desc']]
+    });
+
+    // Real‑time updates
+    const socket = io();
+    socket.on('row_updated', row => {
+      const rec = {
+        'QR Data':        row.qr_data,
+        'Scan Count':     row.scan_count,
+        'Last Timestamp': row.last_timestamp,
+        'Timestamps':     row.timestamps
+      };
+      const idx = csvTable.rows().indexes()
+        .filter(i => csvTable.row(i).data()['QR Data'] === row.qr_data);
+
+      if (idx.length) {
+        csvTable.row(idx[0]).data(rec);
+      } else {
+        csvTable.row.add(rec);
+      }
+      csvTable.order([[2,'desc']]).draw(false);
+
+      processing = false;
+    });
+  </script>
+</body>
+</html>
