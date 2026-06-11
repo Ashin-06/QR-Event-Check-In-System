@@ -1012,6 +1012,48 @@
         <button id="btn-toggle-tunnel" class="ops-btn" style="margin: 0;">Start Public Tunnel</button>
       </div>
 
+      <!-- 🔒 Dashboard Sharing & Remote Access Panel -->
+      <div class="panel" style="margin-bottom: 20px;">
+        <div class="panel-title">🔒 Dashboard Sharing & Access</div>
+        <div style="font-size: 0.78rem; color: var(--muted); line-height: 1.4; margin-bottom: 12px;">
+          Share access to this manager dashboard with other organizers. Passcode-protected access is enabled by default.
+        </div>
+        
+        <div class="form-group" style="margin-bottom: 12px;">
+          <label class="form-label" style="font-size:0.65rem;">Sharing Mode</label>
+          <select id="sharing-access-level" class="form-input" style="cursor: pointer; padding: 6px 10px; font-size: 0.8rem; height: auto;">
+            <option value="passcode">Passcode Protected</option>
+            <option value="public">Public Access (No Passcode)</option>
+            <option value="disabled">Disabled (Host Only)</option>
+          </select>
+        </div>
+
+        <div class="form-group" style="margin-bottom: 12px;" id="sharing-passcode-group">
+          <label class="form-label" style="font-size:0.65rem;">Passcode</label>
+          <div style="display: flex; gap: 8px;">
+            <input type="text" id="sharing-passcode-input" class="form-input" style="font-family: var(--mono); text-align: center; font-weight: bold; font-size: 0.9rem;" value="----" autocomplete="off" />
+            <button id="btn-save-sharing" class="ops-btn" style="margin: 0; width: auto; font-size: 0.72rem; padding: 0 14px;">Save</button>
+          </div>
+        </div>
+
+        <div id="sharing-links-area" style="display: none; border-top: 1px dashed var(--border); padding-top: 12px; margin-top: 12px;">
+          <div style="margin-bottom: 10px;">
+            <div style="font-size: 0.65rem; font-weight: 700; color: var(--muted); text-transform: uppercase; margin-bottom: 3px;">LAN Dashboard Link:</div>
+            <a id="sharing-lan-url" href="#" target="_blank" style="font-family: var(--mono); font-size: 0.75rem; color: var(--accent); text-decoration: none; word-break: break-all;">Loading...</a>
+          </div>
+          
+          <div id="sharing-tunnel-url-group" style="display: none; margin-bottom: 12px;">
+            <div style="font-size: 0.65rem; font-weight: 700; color: var(--muted); text-transform: uppercase; margin-bottom: 3px;">Public Tunnel Dashboard Link:</div>
+            <a id="sharing-tunnel-url" href="#" target="_blank" style="font-family: var(--mono); font-size: 0.75rem; color: var(--accent2); text-decoration: none; word-break: break-all;">Loading...</a>
+          </div>
+
+          <div style="text-align: center; background: white; padding: 10px; border-radius: 8px; width: fit-content; margin-left: auto; margin-right: auto; margin-top: 12px;">
+            <img id="sharing-qr-img" src="" alt="Scan to open dashboard" style="width: 125px; height: 125px; display: block;" />
+          </div>
+          <div style="text-align: center; font-size: 0.65rem; color: var(--muted); margin-top: 4px;">Scan QR to open authenticated Dashboard on mobile</div>
+        </div>
+      </div>
+
       <!-- Webcam Scanner Panel (Local scanner on this machine) -->
       <div class="panel" style="margin-bottom: 20px;">
         <div class="panel-title">📷 Webcam Scanner (This Machine)</div>
@@ -1833,14 +1875,14 @@
       btnToggleTunnel.style.color = '#ff6b6b';
       btnToggleTunnel.style.borderColor = 'rgba(255, 50, 50, 0.3)';
       
-      if (data.url && data.url !== 'Connecting...') {
+      if (data.url && data.url !== 'Connecting...' && data.url !== 'Reconnecting...') {
         tunnelUrlContainer.style.display = 'block';
         tunnelPublicUrl.textContent = data.url;
         tunnelPublicUrl.href = data.url;
         tunnelQrImg.src = `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(data.url)}`;
       } else {
         tunnelUrlContainer.style.display = 'block';
-        tunnelPublicUrl.textContent = 'Setting up tunnel...';
+        tunnelPublicUrl.textContent = data.url || 'Setting up tunnel...';
         tunnelPublicUrl.removeAttribute('href');
         tunnelQrImg.src = '';
       }
@@ -1872,7 +1914,6 @@
       .then(r => r.json())
       .then(data => {
         showDashboardToast('Tunnel Triggered', data.message, 'ok');
-        // Let socket trigger update UI
       })
       .catch(err => {
         showDashboardToast('Tunnel Error', err.message, 'err');
@@ -1880,6 +1921,100 @@
       .finally(() => {
         btnToggleTunnel.disabled = false;
       });
+  });
+
+  // ── Dashboard Sharing & Access Control Logic ──────────────────────────────
+  const sharingAccessLevel = document.getElementById('sharing-access-level');
+  const sharingPasscodeGroup = document.getElementById('sharing-passcode-group');
+  const sharingPasscodeInput = document.getElementById('sharing-passcode-input');
+  const btnSaveSharing = document.getElementById('btn-save-sharing');
+  const sharingLinksArea = document.getElementById('sharing-links-area');
+  const sharingLanUrl = document.getElementById('sharing-lan-url');
+  const sharingTunnelUrlGroup = document.getElementById('sharing-tunnel-url-group');
+  const sharingTunnelUrl = document.getElementById('sharing-tunnel-url');
+  const sharingQrImg = document.getElementById('sharing-qr-img');
+
+  function loadSharingSettings() {
+    fetch('/dashboard_sharing_info')
+      .then(r => r.json())
+      .then(data => {
+        sharingAccessLevel.value = data.sharing;
+        sharingPasscodeInput.value = data.passcode;
+        
+        if (data.sharing === 'disabled') {
+          sharingPasscodeGroup.style.display = 'none';
+          sharingLinksArea.style.display = 'none';
+        } else {
+          sharingPasscodeGroup.style.display = data.sharing === 'public' ? 'none' : 'block';
+          sharingLinksArea.style.display = 'block';
+          
+          sharingLanUrl.href = data.lan_url;
+          sharingLanUrl.textContent = data.lan_url;
+          
+          let activeUrl = data.lan_url;
+          
+          if (data.tunnel_url) {
+            sharingTunnelUrlGroup.style.display = 'block';
+            sharingTunnelUrl.href = data.tunnel_url;
+            sharingTunnelUrl.textContent = data.tunnel_url;
+            activeUrl = data.tunnel_url;
+          } else {
+            sharingTunnelUrlGroup.style.display = 'none';
+          }
+          
+          sharingQrImg.src = `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(activeUrl)}`;
+        }
+      })
+      .catch(err => console.error('Error loading sharing info:', err));
+  }
+
+  loadSharingSettings();
+
+  socket.on('tunnel_status_update', (d) => {
+    updateTunnelUI(d);
+    loadSharingSettings();
+  });
+  socket.on('sharing_updated', () => loadSharingSettings());
+
+  btnSaveSharing.addEventListener('click', () => {
+    const sharing = sharingAccessLevel.value;
+    const passcode = sharingPasscodeInput.value.trim();
+    
+    if (sharing === 'passcode' && !passcode) {
+      alert('Please specify a passcode.');
+      return;
+    }
+    
+    btnSaveSharing.disabled = true;
+    btnSaveSharing.textContent = 'Saving...';
+    
+    fetch('/save_sharing_settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sharing, passcode })
+    })
+    .then(r => r.json())
+    .then(data => {
+      showDashboardToast('Sharing Settings', data.message, 'ok');
+      loadSharingSettings();
+    })
+    .catch(err => {
+      showDashboardToast('Sharing Error', err.message, 'err');
+    })
+    .finally(() => {
+      btnSaveSharing.disabled = false;
+      btnSaveSharing.textContent = 'Save';
+    });
+  });
+
+  sharingAccessLevel.addEventListener('change', () => {
+    if (sharingAccessLevel.value === 'disabled') {
+      sharingPasscodeGroup.style.display = 'none';
+      sharingLinksArea.style.display = 'none';
+    } else {
+      sharingPasscodeGroup.style.display = sharingAccessLevel.value === 'public' ? 'none' : 'block';
+      sharingLinksArea.style.display = 'block';
+    }
   });
 
   // ── CSV/Excel Import Preview wizard OVERRIDE ───────────────────────────────

@@ -45,7 +45,7 @@ import string
 
 import pandas as pd
 import qrcode
-from flask import Flask, jsonify, render_template, request, session, send_file, send_from_directory
+from flask import Flask, jsonify, render_template, request, session, send_file, send_from_directory, redirect
 from flask_socketio import SocketIO
 from openpyxl import load_workbook
 from openpyxl.styles import PatternFill
@@ -94,6 +94,37 @@ def get_lan_ip() -> str:
         return ip
     except Exception:
         return "127.0.0.1"
+
+
+def is_localhost_request() -> bool:
+    if request.headers.get("X-Forwarded-For"):
+        return False
+    host = request.host.lower()
+    if not ("localhost" in host or "127.0.0.1" in host):
+        return False
+    if request.remote_addr not in ["127.0.0.1", "::1"]:
+        return False
+    return True
+
+
+def is_dashboard_authorized() -> bool:
+    global dashboard_sharing, dashboard_passcode
+    if is_localhost_request():
+        return True
+    if dashboard_sharing == "public":
+        return True
+    elif dashboard_sharing == "disabled":
+        return False
+    
+    if session.get("dashboard_authorized") == True:
+        return True
+        
+    passcode_param = request.args.get("passcode")
+    if passcode_param == dashboard_passcode:
+        session["dashboard_authorized"] = True
+        return True
+        
+    return False
 
 
 # ── App setup ────────────────────────────────────────────────────────────────
@@ -150,6 +181,10 @@ def get_config_file() -> str:
 # ── Global state ──────────────────────────────────────────────────────────────
 lock            = threading.Lock()
 highlight_lock  = threading.Lock()
+
+dashboard_sharing = "passcode"
+# Generate a random 4-digit passcode on server startup
+dashboard_passcode = "".join(random.choices(string.digits, k=4))
 
 # ── Rate limiting (simple in-memory) ─────────────────────────────────────────
 _rate_store: dict[str, float] = defaultdict(float)
@@ -253,7 +288,7 @@ def load_active_event() -> None:
             headers = [
                 "Name", "Email Address", "Registration Number", "Phone Number",
                 "Unique ID", "QR", "Barcode", SCAN_COL_NAME, "Email Sent Status", "WhatsApp Sent Status",
-                "QR Code Image", "Barcode Image"
+                "Scan Timestamps", "Scan Devices", "QR Code Image", "Barcode Image"
             ]
             for col_num, header in enumerate(headers, 1):
                 ws.cell(row=1, column=col_num, value=header)
@@ -440,7 +475,57 @@ def index():
 
 @app.route("/dashboard")
 def dashboard_view():
+    if not is_dashboard_authorized():
+        return render_template("dashboard_login.html", error=request.args.get("error"))
     return render_template("dashboard.html")
+
+
+@app.route("/dashboard_login", methods=["GET", "POST"])
+def dashboard_login():
+    global dashboard_passcode
+    if request.method == "POST":
+        code_entered = request.form.get("passcode", "").strip()
+        if code_entered == dashboard_passcode:
+            session["dashboard_authorized"] = True
+            return redirect("/dashboard")
+        return render_template("dashboard_login.html", error="Invalid passcode.")
+    return render_template("dashboard_login.html")
+
+
+@app.route("/dashboard_sharing_info", methods=["GET"])
+def dashboard_sharing_info():
+    port = int(os.environ.get("PORT", 5001))
+    lan_ip = get_lan_ip()
+    lan_url = f"http://{lan_ip}:{port}/dashboard?passcode={dashboard_passcode}"
+    
+    tunnel_url_dash = ""
+    if _tunnel_url:
+        tunnel_url_dash = f"{_tunnel_url}/dashboard?passcode={dashboard_passcode}"
+        
+    return jsonify(
+        sharing=dashboard_sharing,
+        passcode=dashboard_passcode,
+        lan_url=lan_url,
+        tunnel_url=tunnel_url_dash
+    )
+
+
+@app.route("/save_sharing_settings", methods=["POST"])
+def save_sharing_settings():
+    global dashboard_sharing, dashboard_passcode
+    data = request.json or {}
+    sharing = data.get("sharing", "passcode")
+    passcode = data.get("passcode", "").strip()
+    
+    if sharing not in ["passcode", "public", "disabled"]:
+        return jsonify(message="Invalid sharing mode."), 400
+        
+    dashboard_sharing = sharing
+    if passcode:
+        dashboard_passcode = passcode
+        
+    socketio.emit("sharing_updated", {})
+    return jsonify(message="Dashboard sharing settings saved successfully.")
 
 
 @app.route("/network_info")
@@ -587,13 +672,8 @@ def _perform_checkin(qr_data: str, device_id: str = "unknown") -> tuple[dict, in
             # 1) Open Excel and find matching attendee
             wb   = load_workbook(excel_file)
             ws   = wb.active
-            hdrs = _get_headers(ws)
+            hdrs, _ = _get_or_create_headers(ws)
             scan_key = SCAN_COL_NAME.lower()
-
-            if scan_key not in hdrs:
-                col = ws.max_column + 1
-                ws.cell(row=1, column=col, value=SCAN_COL_NAME)
-                hdrs[scan_key] = col
 
             required = {"name", "email address", "registration number", "qr"}
             missing  = required - hdrs.keys()
@@ -636,6 +716,20 @@ def _perform_checkin(qr_data: str, device_id: str = "unknown") -> tuple[dict, in
             cnt += 1
             new_status = "Scanned" if cnt == 1 else f"Scanned {cnt} Times"
             ws.cell(row=r, column=col, value=new_status)
+
+            device_name = "unknown"
+            with _devices_lock:
+                if device_id in connected_devices:
+                    device_name = connected_devices[device_id]["name"]
+
+            ts_col_idx = hdrs.get("scan timestamps")
+            dev_col_idx = hdrs.get("scan devices")
+            if ts_col_idx:
+                prev_ts = str(ws.cell(row=r, column=ts_col_idx).value or "").strip()
+                ws.cell(row=r, column=ts_col_idx, value=f"{prev_ts};{now}" if prev_ts else now)
+            if dev_col_idx:
+                prev_dev = str(ws.cell(row=r, column=dev_col_idx).value or "").strip()
+                ws.cell(row=r, column=dev_col_idx, value=f"{prev_dev};{device_name}" if prev_dev else device_name)
 
             # Get phone number column
             phone_col_idx = hdrs.get("phone number")
@@ -966,7 +1060,7 @@ def create_event():
     headers = [
         "Name", "Email Address", "Registration Number", "Phone Number",
         "Unique ID", "QR", "Barcode", SCAN_COL_NAME, "Email Sent Status", "WhatsApp Sent Status",
-        "QR Code Image", "Barcode Image"
+        "Scan Timestamps", "Scan Devices", "QR Code Image", "Barcode Image"
     ]
     for col_num, header in enumerate(headers, 1):
         ws.cell(row=1, column=col_num, value=header)
@@ -1010,52 +1104,59 @@ def _run_tunnel():
     import subprocess
     import re
     
-    print("[tunnel] Starting localhost.run SSH tunnel...")
-    cmd = ["ssh", "-R", "80:localhost:5001", "nokey@localhost.run"]
+    print("[tunnel] Starting localhost.run SSH tunnel loop...")
+    # Add ServerAlive keepalives to prevent disconnect drops
+    cmd = ["ssh", "-o", "ServerAliveInterval=30", "-o", "ServerAliveCountMax=3", "-R", "80:localhost:5001", "nokey@localhost.run"]
     
-    try:
-        startupinfo = None
-        if os.name == 'nt':
-            startupinfo = subprocess.STARTUPINFO()
-            startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-            startupinfo.wShowWindow = subprocess.SW_HIDE
+    url_pattern = re.compile(r"https?://[a-zA-Z0-9.-]+\.lhr\.(?:life|link|run|tunnel)")
+    lhrtunnel_pattern = re.compile(r"https?://[a-zA-Z0-9.-]+\.lhrtunnel\.link")
+    
+    _tunnel_active = True
+    socketio.emit("tunnel_status_update", {"active": True, "url": "Connecting..."})
+    
+    while _tunnel_active:
+        try:
+            startupinfo = None
+            if os.name == 'nt':
+                startupinfo = subprocess.STARTUPINFO()
+                startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+                startupinfo.wShowWindow = subprocess.SW_HIDE
 
-        _tunnel_process = subprocess.Popen(
-            cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            bufsize=1,
-            startupinfo=startupinfo
-        )
-        
-        _tunnel_active = True
-        socketio.emit("tunnel_status_update", {"active": True, "url": "Connecting..."})
-        
-        url_pattern = re.compile(r"https?://[a-zA-Z0-9.-]+\.lhr\.(?:life|link|run|tunnel)")
-        lhrtunnel_pattern = re.compile(r"https?://[a-zA-Z0-9.-]+\.lhrtunnel\.link")
-        
-        while _tunnel_active and _tunnel_process.poll() is None:
-            line = _tunnel_process.stdout.readline()
-            if not line:
-                break
-            print(f"[tunnel-ssh] {line.strip()}")
+            with _tunnel_lock:
+                if not _tunnel_active:
+                    break
+                _tunnel_process = subprocess.Popen(
+                    cmd,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    text=True,
+                    bufsize=1,
+                    startupinfo=startupinfo
+                )
             
-            match = url_pattern.search(line) or lhrtunnel_pattern.search(line)
-            if match:
-                _tunnel_url = match.group(0)
-                print(f"[tunnel] Extracted tunnel URL: {_tunnel_url}")
-                socketio.emit("tunnel_status_update", {"active": True, "url": _tunnel_url})
+            while _tunnel_active and _tunnel_process.poll() is None:
+                line = _tunnel_process.stdout.readline()
+                if not line:
+                    break
+                print(f"[tunnel-ssh] {line.strip()}")
                 
-        print("[tunnel] Tunnel SSH process stopped.")
-    except Exception as e:
-        print(f"[tunnel] Error: {e}")
-    finally:
-        with _tunnel_lock:
-            _tunnel_active = False
-            _tunnel_url = None
-            _tunnel_process = None
-        socketio.emit("tunnel_status_update", {"active": False, "url": None})
+                match = url_pattern.search(line) or lhrtunnel_pattern.search(line)
+                if match:
+                    _tunnel_url = match.group(0)
+                    print(f"[tunnel] Extracted tunnel URL: {_tunnel_url}")
+                    socketio.emit("tunnel_status_update", {"active": True, "url": _tunnel_url})
+            
+            if _tunnel_active:
+                print("[tunnel] SSH tunnel dropped. Reconnecting in 3 seconds...")
+                socketio.emit("tunnel_status_update", {"active": True, "url": "Reconnecting..."})
+                time.sleep(3)
+        except Exception as e:
+            print(f"[tunnel] Loop Error: {e}")
+            if _tunnel_active:
+                time.sleep(3)
+                
+    print("[tunnel] Tunnel SSH loop fully stopped.")
+    socketio.emit("tunnel_status_update", {"active": False, "url": None})
 
 
 @app.route("/start_tunnel", methods=["POST"])
@@ -1104,6 +1205,8 @@ def _get_or_create_headers(ws) -> tuple[dict[str, int], bool]:
         SCAN_COL_NAME.lower(): SCAN_COL_NAME,
         "email sent status": "Email Sent Status",
         "whatsapp sent status": "WhatsApp Sent Status",
+        "scan timestamps": "Scan Timestamps",
+        "scan devices": "Scan Devices",
         "qr code image": "QR Code Image",
         "barcode image": "Barcode Image"
     }
@@ -1294,7 +1397,7 @@ def _perform_bulk_import(rows, mode, auto_resolve) -> tuple[dict, int]:
                 headers = [
                     "Name", "Email Address", "Registration Number", "Phone Number",
                     "Unique ID", "QR", "Barcode", SCAN_COL_NAME, "Email Sent Status", "WhatsApp Sent Status",
-                    "QR Code Image", "Barcode Image"
+                    "Scan Timestamps", "Scan Devices", "QR Code Image", "Barcode Image"
                 ]
                 
                 # Dynamic custom columns from rows

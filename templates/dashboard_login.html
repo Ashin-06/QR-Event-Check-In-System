@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dashboard Authorization</title>
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;700;800&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg:       #080c14;
+      --surface:  rgba(255,255,255,0.04);
+      --border:   rgba(255,255,255,0.10);
+      --accent:   #00f5a0;
+      --accent2:  #00b4d8;
+      --text:     #e8edf5;
+      --muted:    #6b7a99;
+    }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Syne', sans-serif;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      margin: 0;
+      position: relative;
+    }
+    body::before {
+      content: '';
+      position: absolute; inset: 0; z-index: 0;
+      background: radial-gradient(ellipse 60% 50% at 50% 40%, rgba(0,245,160,0.08) 0%, transparent 70%);
+      pointer-events: none;
+    }
+    .card {
+      position: relative; z-index: 1;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 40px;
+      text-align: center;
+      backdrop-filter: blur(20px);
+      max-width: 380px;
+      width: 90%;
+      box-shadow: 0 12px 40px rgba(0,0,0,0.5);
+    }
+    .logo-icon {
+      width: 44px; height: 44px;
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      border-radius: 10px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 22px;
+      margin: 0 auto 20px;
+    }
+    h2 { margin-bottom: 8px; font-weight: 800; font-size: 1.5rem; letter-spacing: -0.01em; }
+    p { font-size:0.85rem; color: var(--muted); margin-bottom: 24px; line-height: 1.5; }
+    .input-field {
+      width: 100%;
+      padding: 12px 16px;
+      background: rgba(255,255,255,0.06);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      font-size: 1.1rem;
+      font-weight: bold;
+      margin-bottom: 20px;
+      outline: none;
+      text-align: center;
+      letter-spacing: 0.2em;
+      transition: border-color 0.25s;
+    }
+    .input-field:focus { border-color: var(--accent); }
+    .btn {
+      width: 100%;
+      padding: 12px;
+      background: var(--accent);
+      color: var(--bg);
+      border: none;
+      border-radius: 8px;
+      font-size: 1rem;
+      font-weight: 800;
+      cursor: pointer;
+      box-shadow: 0 4px 15px rgba(0,245,160,0.3);
+      transition: background-color 0.2s;
+    }
+    .btn:hover { background: #00d68b; }
+    .error { color: #ff6b6b; font-size: 0.8rem; margin-top: -10px; margin-bottom: 15px; font-weight: bold; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="logo-icon">⬢</div>
+    <h2>Dashboard Authorization</h2>
+    <p>Enter passcode to authorize access to the manager command center.</p>
+    {% if error %}
+      <div class="error">{{ error }}</div>
+    {% endif %}
+    <form method="POST" action="/dashboard_login">
+      <input type="password" name="passcode" class="input-field" placeholder="••••" required autofocus autocomplete="off" />
+      <button type="submit" class="btn">Authorize</button>
+    </form>
+  </div>
+</body>
+</html>
