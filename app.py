@@ -1407,7 +1407,7 @@ def _run_tunnel():
     
     print("[tunnel] Starting localhost.run SSH tunnel loop...")
     # Add ServerAlive keepalives to prevent disconnect drops and bypass interactive prompt
-    cmd = ["ssh", "-o", "StrictHostKeyChecking=no", "-o", "UserKnownHostsFile=NUL" if os.name == "nt" else "/dev/null", "-o", "ServerAliveInterval=30", "-o", "ServerAliveCountMax=3", "-R", "80:localhost:5001", "nokey@localhost.run"]
+    cmd = ["ssh", "-o", "StrictHostKeyChecking=no", "-o", "UserKnownHostsFile=NUL" if os.name == "nt" else "/dev/null", "-o", "ServerAliveInterval=30", "-o", "ServerAliveCountMax=3", "-R", "80:127.0.0.1:5001", "nokey@localhost.run"]
     
     url_pattern = re.compile(r"https?://[a-zA-Z0-9.-]+\.lhr\.(?:life|link|run|tunnel)")
     lhrtunnel_pattern = re.compile(r"https?://[a-zA-Z0-9.-]+\.lhrtunnel\.link")

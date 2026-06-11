@@ -888,7 +888,6 @@
   <div class="tabs-container">
     {% if is_admin %}
     <button class="tab-btn active" id="tab-log-btn">Live Scan Log</button>
-    <button class="tab-btn" id="tab-registry-btn">Attendee Registry Lookup</button>
     <button class="tab-btn" id="tab-devices-btn">📡 Devices Monitor</button>
     <button class="tab-btn" id="tab-history-btn">My Scans</button>
     {% else %}
@@ -943,39 +942,6 @@
             <th>Last Scan</th>
             <th>Last Scanner</th>
             <th>All Timestamps</th>
-          </tr>
-        </thead>
-        <tbody></tbody>
-      </table>
-    </div>
-  </div>
-
-  <div id="tab-registry-content" class="tab-content">
-    <div class="panel log-panel">
-      <div class="panel-title">Registered Attendee List</div>
-      
-      <!-- Advanced Filters for Registry -->
-      <div style="display: flex; gap: 14px; margin-bottom: 20px; padding: 14px; background: var(--btn-csv-bg); border: 1px solid var(--border); border-radius: 10px; align-items: center; flex-wrap: wrap;">
-        <span style="font-size: 0.75rem; font-weight: 700; text-transform: uppercase; color: var(--muted); letter-spacing: 0.05em;">🔍 Filters:</span>
-        
-        <div style="display: flex; flex-direction: column; gap: 4px;">
-          <label style="font-size: 0.65rem; font-weight: 700; text-transform: uppercase; color: var(--muted);">Check-In Status</label>
-          <select id="filter-reg-status" style="background: var(--input-bg); border: 1px solid var(--border); border-radius: 6px; padding: 5px 10px; font-family: var(--font); font-size: 0.78rem; color: var(--text); outline: none; min-width: 160px; cursor: pointer;">
-            <option value="">All Registrations</option>
-            <option value="scanned">Checked In Only</option>
-            <option value="not-scanned">Not Checked In Only</option>
-          </select>
-        </div>
-      </div>
-
-      <table id="registry-table" class="display" style="width:100%">
-        <thead>
-          <tr>
-            <th>Name</th>
-            <th>Email</th>
-            <th>Reg Number</th>
-            <th>Status</th>
-            <th>Action</th>
           </tr>
         </thead>
         <tbody></tbody>
@@ -1401,7 +1367,6 @@
   });
 
   let csvTable;
-  let registryTable;
 
   if (isAdmin) {
     // ── DataTable: Live Scan Log ──────────────────────────────────────────────
@@ -1470,42 +1435,6 @@
       }
     });
 
-    // ── DataTable: Attendee Registry ──────────────────────────────────────────
-    registryTable = $('#registry-table').DataTable({
-      ajax: { url: '/registry', dataSrc: '' },
-      columns: [
-        { data: 'name' },
-        { data: 'email' },
-        { data: 'reg_no' },
-        { 
-          data: 'status',
-          render: d => {
-            const isScanned = d && d.toLowerCase().startsWith('scanned');
-            return `<span class="badge-status ${isScanned ? 'scanned' : 'not-scanned'}">${d}</span>`;
-          }
-        },
-        {
-          data: null,
-          orderable: false,
-          render: (data, type, row) => {
-            const isScanned = row.status && row.status.toLowerCase().startsWith('scanned');
-            if (isScanned) {
-              return `<span style="color: var(--accent); font-size: 0.78rem; font-weight:700;">✓ Checked In</span>`;
-            }
-            const qrEscaped = btoa(unescape(encodeURIComponent(row.qr)));
-            return `<button class="manual-checkin-btn" data-qr-b64="${qrEscaped}">Check In</button>`;
-          }
-        }
-      ],
-      pageLength: 15,
-      language: {
-        search: '',
-        searchPlaceholder: 'Search registry…',
-        lengthMenu: 'Show _MENU_',
-        info: '_START_–_END_ of _TOTAL_',
-      }
-    });
-
     // ── Advanced DataTables Filtering ──────────────────────────────────────────
     $.fn.dataTable.ext.search.push(
       function(settings, data, dataIndex) {
@@ -1550,24 +1479,6 @@
           return true;
         }
         
-        // 2) Registry filtering
-        if (tableId === 'registry-table') {
-          const statusFilter = document.getElementById('filter-reg-status').value;
-          const rowData = registryTable.row(dataIndex).data();
-          if (!rowData) return true;
-          
-          const isScanned = rowData.status && rowData.status.toLowerCase().startsWith('scanned');
-          
-          if (statusFilter === 'scanned' && !isScanned) {
-            return false;
-          }
-          if (statusFilter === 'not-scanned' && isScanned) {
-            return false;
-          }
-          
-          return true;
-        }
-        
         return true;
       }
     );
@@ -1576,7 +1487,6 @@
     document.getElementById('filter-log-device').addEventListener('change', () => csvTable.draw());
     document.getElementById('filter-log-type').addEventListener('change', () => csvTable.draw());
     document.getElementById('filter-log-time').addEventListener('change', () => csvTable.draw());
-    document.getElementById('filter-reg-status').addEventListener('change', () => registryTable.draw());
     
     document.getElementById('reset-log-filters').addEventListener('click', () => {
       document.getElementById('filter-log-device').value = "";
@@ -1584,85 +1494,51 @@
       document.getElementById('filter-log-time').value = "";
       csvTable.draw();
     });
-
-    // Handle Manual Check-in Click
-    $('#registry-table').on('click', '.manual-checkin-btn', function() {
-      const btn = $(this);
-      const b64 = btn.attr('data-qr-b64');
-      const qrData = decodeURIComponent(escape(atob(b64)));
-      
-      btn.prop('disabled', true).text('Checking...');
-      
-      fetch('/manual_checkin', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ qr_data: qrData, device_id: deviceId })
-      })
-      .then(r => {
-        if (!r.ok) return r.json().then(e => { throw new Error(e.message || 'Check-in failed'); });
-        return r.json();
-      })
-      .then(data => {
-        const type = data.is_duplicate ? 'warn' : 'ok';
-        setStatus(data.message, type);
-        addLocalHistory(data.details, type);
-      })
-      .catch(e => {
-        setStatus(e.message, 'err');
-        playBeep('err');
-        btn.prop('disabled', false).text('Check In');
-      });
-    });
   }
 
   // ── Tab Toggling ──────────────────────────────────────────────────────────
   const tabLogBtn      = document.getElementById('tab-log-btn');
-  const tabRegistryBtn = document.getElementById('tab-registry-btn');
   const tabDevicesBtn  = document.getElementById('tab-devices-btn');
   const tabHistoryBtn  = document.getElementById('tab-history-btn');
 
   const tabLogContent      = document.getElementById('tab-log-content');
-  const tabRegistryContent = document.getElementById('tab-registry-content');
   const tabDevicesContent  = document.getElementById('tab-devices-content');
   const tabHistoryContent  = document.getElementById('tab-history-content');
 
   function deactivateAll() {
-    tabLogBtn.classList.remove('active');
-    tabRegistryBtn.classList.remove('active');
-    tabDevicesBtn.classList.remove('active');
-    tabHistoryBtn.classList.remove('active');
-    tabLogContent.classList.remove('active');
-    tabRegistryContent.classList.remove('active');
-    tabDevicesContent.classList.remove('active');
-    tabHistoryContent.classList.remove('active');
+    if (tabLogBtn) tabLogBtn.classList.remove('active');
+    if (tabDevicesBtn) tabDevicesBtn.classList.remove('active');
+    if (tabHistoryBtn) tabHistoryBtn.classList.remove('active');
+    if (tabLogContent) tabLogContent.classList.remove('active');
+    if (tabDevicesContent) tabDevicesContent.classList.remove('active');
+    if (tabHistoryContent) tabHistoryContent.classList.remove('active');
   }
 
-  tabLogBtn.addEventListener('click', () => {
-    deactivateAll();
-    tabLogBtn.classList.add('active');
-    tabLogContent.classList.add('active');
-    csvTable.ajax.reload(null, false);
-  });
+  if (tabLogBtn && tabLogContent) {
+    tabLogBtn.addEventListener('click', () => {
+      deactivateAll();
+      tabLogBtn.classList.add('active');
+      tabLogContent.classList.add('active');
+      if (csvTable) csvTable.ajax.reload(null, false);
+    });
+  }
 
-  tabRegistryBtn.addEventListener('click', () => {
-    deactivateAll();
-    tabRegistryBtn.classList.add('active');
-    tabRegistryContent.classList.add('active');
-    registryTable.ajax.reload(null, false);
-  });
+  if (tabDevicesBtn && tabDevicesContent) {
+    tabDevicesBtn.addEventListener('click', () => {
+      deactivateAll();
+      tabDevicesBtn.classList.add('active');
+      tabDevicesContent.classList.add('active');
+    });
+  }
 
-  tabDevicesBtn.addEventListener('click', () => {
-    deactivateAll();
-    tabDevicesBtn.classList.add('active');
-    tabDevicesContent.classList.add('active');
-  });
-
-  tabHistoryBtn.addEventListener('click', () => {
-    deactivateAll();
-    tabHistoryBtn.classList.add('active');
-    tabHistoryContent.classList.add('active');
-    refreshLocalHistoryTable();
-  });
+  if (tabHistoryBtn && tabHistoryContent) {
+    tabHistoryBtn.addEventListener('click', () => {
+      deactivateAll();
+      tabHistoryBtn.classList.add('active');
+      tabHistoryContent.classList.add('active');
+      refreshLocalHistoryTable();
+    });
+  }
 
   // ── Socket.IO real-time events ────────────────────────────────────────────
   const socket = io();
@@ -1733,10 +1609,7 @@
       csvTable.order([[2, 'desc']]).draw(false);
     }
 
-    if (isAdmin && registryTable) {
-      // Sync registry table so status badges update
-      registryTable.ajax.reload(null, false);
-    }
+    // Registry table removed
 
     // Scanner resume is handled by next scan button or local callback
   });
