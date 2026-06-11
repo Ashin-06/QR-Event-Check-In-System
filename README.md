@@ -1,119 +1,98 @@
-# QR Event Check-In System — Upgraded Edition
+# ⬢ QR Event Check-In System — Enterprise Edition
 
-A production-ready Flask + WebSocket system for scanning attendee QR codes at events,
-with real-time log updates, Excel highlighting, and bulk email delivery.
+An enterprise-grade, secure, and highly scalable event check-in and attendee management platform. Built on a robust Flask and Socket.IO real-time backend with a premium dark-mesh glassmorphic frontend, the system facilitates seamless roster imports, dynamic barcode/QR code embedding, bulk invitations, and concurrent multi-device scan synchronization.
 
 ---
 
-## Quick Start
+## 🌟 Key Features
 
+### 1. Hierarchical Event & Sub-Event Management
+* **Isolated Event Workspaces**: Dynamically manages folders under `events/<Event_Name>/` and sub-events under `events/<Event_Name>/<Sub_Event_Name>/`.
+* **Standardized Storage**: Every event workspace encapsulates its own `registrations.xlsx` database, `scanned_log.csv` flat file, custom `config.json` parameters, and image asset subdirectories.
+
+### 2. Advanced Spreadsheet Database Synchronization
+* **Dynamic Header Resolution**: Automatically maps and adds missing standard columns (e.g., `Scan Timestamps`, `Scan Devices`, `Email Sent Status`, etc.) to the spreadsheet database on startup or check-in events.
+* **Atomic Spreadsheet Updates**: Check-in records are updated in real-time. Timestamps and scanner device labels are appended sequentially, separated by semicolons (`;`) for multi-scan tracking.
+* **Background Report Compilation**: Rebuilds highlighted spreadsheet databases containing highlighted scanned rows in a separate background daemon thread, eliminating main-thread locking and UI stuttering.
+
+### 3. QR & Barcode Auto-Embedding
+* **Unique ID Generation**: Generates cryptographically collision-free 8-character Unique IDs for guests.
+* **Symbology Assets**: Auto-generates high-density QR codes and Code128 barcodes.
+* **Automated Excel Formatting**: Fits and embeds QR and Barcode images directly inside [registrations.xlsx](file:///c:/Users/ashin/Downloads/qr_checkin_system_upgraded/qr_checkin_system/events/Default%20Event/registrations.xlsx) cells with optimized cell heights to ensure professional printability.
+
+### 4. Bulk Invitation Campaigns
+* **Dynamic Placeholders**: Supports templated emails and Twilio WhatsApp notifications containing dynamic fields like `{Name}`, `{Registration Number}`, `{Event}`, and `{QR_URL}`.
+* **Robust Mail Server Delivery**: Features an asynchronous email campaign runner with 3-attempt exponential backoff retries, real-time progression tracking, and automated status logging.
+
+### 5. Multi-Device Scanner Network & Live Monitor
+* **Concurrent Scanning**: Supports multiple scanner operators checking in guests simultaneously across different networks (WiFi/LAN or Cellular/Public internet).
+* **Live Device Monitor**: Tracks scanner operator statuses (online/offline, active pings, rename operator, processed scan counts, last-scanned attendee).
+* **Quiet Real-Time Manager Alerts**: Displays non-intrusive bottom-right dashboard notifications for checking in guests, avoiding loud audio interruptions.
+
+### 6. Secure Passcode Authorization
+* **Glassmorphic Security Interface**: Protects the Manager Control Center from unauthorized remote access with a sleek login interface.
+* **Smart Local Bypass**: Requests coming from localhost (`127.0.0.1`) are automatically authorized, while remote connections are securely checked.
+* **Scan-to-Authorize Access**: Generates a shareable dashboard URL and a scan-to-connect QR code containing authorization parameters to quickly provision secondary organizer laptops and mobiles.
+
+### 7. High-Performance Mobile Scanner Client
+* **Dual Verification Modes**:
+  * **Detail Verification (Default)**: Pauses the camera feed and presents a detailed guest profile card detailing Name, Registration Number, Phone, check-in status badge, and custom spreadsheet fields.
+  * **⚡ Quick Scan Mode**: Bypasses the profile card for high-throughput gates, flashing a large 800ms feedback overlay (✅ checkmark for successful scans, ⚠️ warning for duplicate scans, ❌ cross for unregistered codes) and automatically resuming scanning.
+* **Local Session History**: Operators can view their own scanning logs under the "My Scans" tab, backed by `localStorage` persistence.
+
+---
+
+## 📂 Project Architecture
+
+```text
+qr_checkin_system/
+├── app.py                     # Flask backend, Socket.IO channels, API endpoints, SSH Tunnel loop
+├── HELP.md                    # Detailed interactive system user manual
+├── qradding.py                # Command-line utility to generate QR/barcodes and compile master Excel
+├── qrsendemail.py             # Command-line utility to run bulk email invitations
+├── requirements.txt           # Python package dependencies
+├── run_system.bat             # Startup batch file for host machine launcher
+├── start_public_tunnel.bat    # Standalone script to spin up the public internet tunnel
+├── test_checkin.py            # Automated simulation test suite
+├── static/
+│   ├── css/                   # Datatables and vendor styling assets
+│   └── js/                    # Socket.io, jQuery, Datatables, and QR scanner libraries
+└── templates/
+    ├── dashboard.html         # Manager Control Center HTML template
+    ├── dashboard_login.html   # Glassmorphic passcode login HTML template
+    └── index.html             # Mobile scanner client HTML template
+```
+
+---
+
+## ⚙️ Environment Configuration
+
+The application can be configured dynamically via environment variables:
+
+| Variable | Default Value | Description |
+|---|---|---|
+| `PORT` | `5001` | Server port number |
+| `FLASK_DEBUG` | `false` | Enable or disable Flask debug mode |
+| `SECRET_KEY` | Autogenerated | Flask session encryption key |
+| `CORS_ORIGIN` | `*` | Allowed CORS origins for WebSocket connections |
+
+---
+
+## 🚀 Installation & Quick Start
+
+### 1. Installation
+Install the required packages using pip:
 ```bash
 pip install -r requirements.txt
-
-# Set your Excel file path (or place it next to app.py)
-export EXCEL_FILE=/path/to/data_with_qrdemo.xlsx
-
-python app.py
-# Open http://localhost:5001
 ```
 
----
+### 2. Launching the System
+Double-click **`run_system.bat`** (or run `python app.py` from the terminal).
+* **Local Access**: Open `http://localhost:5001/dashboard` to access the Control Center.
+* **LAN Access**: Operators on the same Wi-Fi network can connect to the host's IP (e.g. `http://192.168.1.15:5001`).
 
-## File Structure
-
-```
-qr_checkin_system/
-├── app.py             # Flask app — scan endpoint, real-time socket
-├── qradding.py        # Generate QR codes → embed in Excel
-├── qrsendemail.py     # Bulk email QR codes to attendees
-├── requirements.txt
-├── templates/
-│   └── index.html     # Dark glassmorphic scanner UI
-└── static/
-    └── js/
-        ├── qr-scanner.min.js
-        └── qr-scanner-worker.min.js
-```
-
----
-
-## Environment Variables
-
-| Variable        | Default              | Description                         |
-|-----------------|----------------------|-------------------------------------|
-| `EXCEL_FILE`    | `data_with_qrdemo.xlsx` | Path to master Excel file         |
-| `SECRET_KEY`    | random               | Flask session secret                |
-| `CORS_ORIGIN`   | `*`                  | Allowed CORS origin for SocketIO    |
-| `PORT`          | `5001`               | Server port                         |
-| `FLASK_DEBUG`   | `false`              | Enable Flask debug mode             |
-
----
-
-## QR Generation
-
-```bash
-python qradding.py \
-  --csv attendees.csv \
-  --output data_with_qrdemo.xlsx \
-  --qr-dir qrcodes_samples \
-  --id-length 8
-```
-
-CSV must have columns: `Name`, `Email Address`, `Registration Number`
-
----
-
-## Bulk Email
-
-```bash
-# Use env vars (recommended — never commit credentials)
-export SENDER_EMAIL=you@gmail.com
-export APP_PASSWORD=your_app_password
-export CSV_PATH=attendees.csv
-export QR_FOLDER=qrcodes_samples
-export EVENT_NAME="TechConf 2025"
-export EMAIL_SUBJECT="Your TechConf QR Code"
-
-python qrsendemail.py
-```
-
-Or use flags: `python qrsendemail.py --sender you@gmail.com --password xxx --csv ... --event ...`
-
----
-
-## Bugs Fixed (Original → Fixed)
-
-| # | File | Bug | Fix |
-|---|------|-----|-----|
-| 1 | app.py | `scanned_log.loc[len(df)]` index collision when df has gaps | Replaced with `pd.concat()` |
-| 2 | app.py | QR match used substring (`name in qr_data`) — false positives | Exact match on `qr` column only |
-| 3 | app.py | `/data_csv` read shared DataFrame without lock | Added `with lock` |
-| 4 | app.py | `sort_log` mutated shared df without lock | Called inside lock |
-| 5 | app.py | No Content-Type check on `/scan` | Returns 415 if not JSON |
-| 6 | app.py | No rate limiting — scanner can fire twice per QR | Per-IP 2s cooldown |
-| 7 | app.py | Excel highlight rebuild on main thread (blocks) | Moved to daemon thread |
-| 8 | app.py | No startup validation of EXCEL_FILE | `FileNotFoundError` with clear message |
-| 9 | app.py | No Flask SECRET_KEY | Added from env or random |
-| 10 | app.py | `Timestamps` NaN dtype mixed with str | Normalised on load |
-| 11 | index.html | `processing = false` only in socket callback — locks if socket drops | Added 8s timeout fallback |
-| 12 | index.html | `result` passed as string but new qr-scanner returns `{data}` object | Use `result.data ?? result` |
-| 13 | index.html | Old DataTables CDN (1.13.5) | Updated to 1.13.6 |
-| 14 | qradding.py | `csv_path = ` and `final_excel = ` were empty (syntax/runtime error) | argparse + env vars |
-| 15 | qradding.py | Column letter formula broken for col > 26 | `openpyxl.utils.get_column_letter()` |
-| 16 | qradding.py | No row height set — QR images overlapped rows | `ws.row_dimensions[r].height` set |
-| 17 | qrsendemail.py | `REG_COL = 'Registration Number '` (trailing space) | Stripped to `'Registration Number'` |
-| 18 | qrsendemail.py | Credentials hardcoded as empty strings | argparse + env vars |
-| 19 | qrsendemail.py | No retry on send failure | 3-attempt exponential backoff |
-| 20 | qrsendemail.py | No send summary | Printed counters at end |
-
----
-
-## Excel Column Requirements
-
-The master Excel file must have these headers (case-insensitive, trimmed):
-- `Name`
-- `Email Address`
-- `Registration Number`
-- `QR` — the raw QR string (added by `qradding.py`)
-
-The app auto-creates `Scanned Status` if missing.
+### 3. Activating the Public Tunnel
+For scanners operating on mobile cellular networks:
+1. Open the dashboard.
+2. Go to the **📡 Public Internet Tunnel** panel and click **"Start Public Tunnel"** (or run `start_public_tunnel.bat`).
+3. Share the generated public tunnel URL with your team or have them scan the sharing QR code.
