@@ -1190,25 +1190,7 @@
         </div>
       </div>
 
-      <!-- Webcam Scanner Panel (Local scanner on this machine) -->
-      <div class="panel" style="margin-bottom: 20px;">
-        <div class="panel-title">📷 Webcam Scanner (This Machine)</div>
-        <div class="scanner-wrap">
-          <video id="scanner" autoplay playsinline muted></video>
-          <div class="scan-overlay">
-            <div class="scan-corner tl"></div>
-            <div class="scan-corner tr"></div>
-            <div class="scan-corner bl"></div>
-            <div class="scan-corner br"></div>
-            <div class="scan-line" id="scan-line"></div>
-          </div>
-        </div>
-        <div class="status-box" id="status">
-          <div class="status-dot"></div>
-          <span id="status-text">Initializing Camera...</span>
-        </div>
-        <button class="restart-btn" id="restart-btn">↺ Restart Scanner</button>
-      </div>
+
 
       <!-- Last Scanned Attendee Card -->
       <div class="panel" style="margin-bottom: 20px;">
@@ -1528,9 +1510,8 @@
 <script src="/static/js/jquery.min.js"></script>
 <script src="/static/js/jquery.dataTables.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-<script type="module">
-  import QrScanner from '/static/js/qr-scanner.min.js';
 
+<script type="module">
   // Helper to escape HTML safely
   function escapeHtml(str) {
     if (!str) return '';
@@ -1571,81 +1552,7 @@
   }
   devNameInput.value = deviceName;
 
-  // ── Webcam Scanner Setup ──────────────────────────────────────────────────
-  const video = document.getElementById('scanner');
-  const statusBox = document.getElementById('status');
-  const statusText = document.getElementById('status-text');
-  const scanLine = document.getElementById('scan-line');
-  let processing = false;
-  let scanTimeoutId = null;
 
-  function setStatus(msg, type = '') {
-    if (!statusBox || !statusText) return;
-    statusBox.className = `status-box ${type}`;
-    statusText.textContent = msg + ' — ' + new Date().toLocaleTimeString();
-  }
-
-  const scanner = new QrScanner(
-    video,
-    result => {
-      if (processing) return;
-      processing = true;
-      scanner.stop();
-      if (scanLine) scanLine.classList.remove('active');
-      setStatus('Processing scan…');
-
-      // Safety timeout — re-enable if socket never fires within 8s
-      scanTimeoutId = setTimeout(() => {
-        processing = false;
-        scanner.start();
-        if (scanLine) scanLine.classList.add('active');
-        setStatus('Scanning…');
-      }, 8000);
-
-      fetch('/scan', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ qr_data: result.data ?? result, device_id: deviceId })
-      })
-      .then(r => {
-        if (!r.ok) return r.json().then(e => { throw new Error(e.message || 'Server error'); });
-        return r.json();
-      })
-      .then(data => {
-        const type = data.is_duplicate ? 'warn' : 'ok';
-        setStatus(data.message, type);
-      })
-      .catch(e => {
-        setStatus(e.message, 'err');
-        clearTimeout(scanTimeoutId);
-        processing = false;
-        scanner.start();
-        if (scanLine) scanLine.classList.add('active');
-      });
-    },
-    { highlightScanRegion: false, highlightCodeOutline: false }
-  );
-
-  // Start webcam
-  navigator.mediaDevices.getUserMedia({
-    video: { facingMode: 'environment', width: { ideal: 640 }, height: { ideal: 480 } }
-  })
-  .then(stream => {
-    video.srcObject = stream;
-    video.play();
-    scanner.start();
-    if (scanLine) scanLine.classList.add('active');
-    setStatus('Scanning…');
-  })
-  .catch(e => setStatus('Camera error: ' + e.message, 'err'));
-
-  document.getElementById('restart-btn').addEventListener('click', () => {
-    clearTimeout(scanTimeoutId);
-    processing = false;
-    scanner.start();
-    if (scanLine) scanLine.classList.add('active');
-    setStatus('Scanning…');
-  });
 
   // ── Operations Tab Toggling ───────────────────────────────────────────────
   const opsTabAddBtn = document.getElementById('ops-tab-add-btn');
@@ -2872,11 +2779,7 @@
     // Sync registry table so status badges update
     registryTable.ajax.reload(null, false);
 
-    // Re-enable camera scanner on this machine
-    processing = false;
-    scanner.start();
-    if (scanLine) scanLine.classList.add('active');
-    setStatus('Scanning…');
+
   });
 
   // ── registry_updated: reload guest list instantly ────────────────────────

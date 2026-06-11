@@ -14,7 +14,7 @@ start "QR Check-In Server" cmd /k "python app.py"
 timeout /t 2 /nobreak > nul
 
 echo Opening Check-In Dashboard in default browser...
-start http://localhost:5001
+start http://localhost:5001/dashboard
 
 echo.
 echo 🚀 Dashboard opened successfully!
