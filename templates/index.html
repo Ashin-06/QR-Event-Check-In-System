@@ -691,6 +691,27 @@
       font-family: var(--mono);
       margin-left: 6px;
     }
+
+    /* Switch Slider styling */
+    .switch input:checked + .slider {
+      background-color: var(--accent);
+      border-color: var(--accent);
+    }
+    .switch .slider:before {
+      position: absolute;
+      content: "";
+      height: 14px;
+      width: 14px;
+      left: 3px;
+      bottom: 3px;
+      background-color: var(--text);
+      transition: .3s;
+      border-radius: 50%;
+    }
+    .switch input:checked + .slider:before {
+      transform: translateX(22px);
+      background-color: var(--bg);
+    }
   </style>
 </head>
 <body>
@@ -765,12 +786,25 @@
           <div class="scan-corner br"></div>
           <div class="scan-line" id="scan-line"></div>
         </div>
+        <!-- Quick Scan Status Visual Overlay -->
+        <div id="quick-scan-indicator" style="position: absolute; inset: 0; display: none; align-items: center; justify-content: center; z-index: 10; transition: background-color 0.2s ease; border-radius: 12px;">
+          <span id="quick-scan-indicator-icon" style="font-size: 4.5rem; filter: drop-shadow(0 4px 12px rgba(0,0,0,0.5));"></span>
+        </div>
       </div>
       <div class="status-box" id="status">
         <div class="status-dot"></div>
         <span id="status-text">Initializing…</span>
       </div>
       <button class="restart-btn" id="restart-btn">↺ Restart Scanner</button>
+      
+      <!-- Quick Scan Mode Toggle -->
+      <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 14px; padding: 10px; background: rgba(255,255,255,0.02); border: 1px solid var(--border); border-radius: 10px;">
+        <span style="font-size: 0.85rem; font-weight: 700; color: var(--text);">⚡ Quick Scan Mode</span>
+        <label class="switch" style="position: relative; display: inline-block; width: 44px; height: 22px;">
+          <input type="checkbox" id="quick-scan-toggle" style="opacity: 0; width: 0; height: 0;">
+          <span class="slider" style="position: absolute; cursor: pointer; inset: 0; background-color: rgba(255,255,255,0.1); transition: .3s; border-radius: 22px; border: 1px solid var(--border);"></span>
+        </label>
+      </div>
     </div>
 
     <div class="panel">
@@ -1179,6 +1213,42 @@
     setStatus('Scanning…');
   });
 
+  // ── Quick Scan Mode Helpers ───────────────────────────────────────────────
+  function showQuickScanOverlay(type) {
+    const indicator = document.getElementById('quick-scan-indicator');
+    const icon = document.getElementById('quick-scan-indicator-icon');
+    
+    if (type === 'ok') {
+      indicator.style.backgroundColor = 'rgba(0, 245, 160, 0.35)'; // green
+      icon.textContent = '✅';
+    } else if (type === 'warn') {
+      indicator.style.backgroundColor = 'rgba(255, 107, 53, 0.4)'; // orange/yellow
+      icon.textContent = '⚠️';
+    } else {
+      indicator.style.backgroundColor = 'rgba(255, 50, 50, 0.4)'; // red
+      icon.textContent = '❌';
+    }
+    
+    indicator.style.display = 'flex';
+    
+    setTimeout(() => {
+      indicator.style.display = 'none';
+      clearTimeout(scanTimeoutId);
+      processing = false;
+      scanner.start();
+      scanLine.classList.add('active');
+      setStatus('Scanning…');
+    }, 800);
+  }
+
+  // Load and bind Quick Scan Toggle
+  const quickScanToggle = document.getElementById('quick-scan-toggle');
+  const storedQuickScan = localStorage.getItem('quick_scan_mode') === 'true';
+  quickScanToggle.checked = storedQuickScan;
+  quickScanToggle.addEventListener('change', () => {
+    localStorage.setItem('quick_scan_mode', quickScanToggle.checked);
+  });
+
   // ── QR Scanner ────────────────────────────────────────────────────────────
   const video = document.getElementById('scanner');
   let processing = false;
@@ -1214,16 +1284,27 @@
         clearTimeout(scanTimeoutId);
         const type = data.is_duplicate ? 'warn' : 'ok';
         setStatus(data.message, type);
-        openVerificationOverlay(data.details, data.is_duplicate);
-        addLocalHistory(data.details, type);
+        
+        if (quickScanToggle.checked) {
+          showQuickScanOverlay(type);
+          addLocalHistory(data.details, type);
+        } else {
+          openVerificationOverlay(data.details, data.is_duplicate);
+          addLocalHistory(data.details, type);
+        }
       })
       .catch(e => {
+        clearTimeout(scanTimeoutId);
         setStatus(e.message, 'err');
         playBeep('err');
-        clearTimeout(scanTimeoutId);
-        processing = false;
-        scanner.start();
-        scanLine.classList.add('active');
+        
+        if (quickScanToggle.checked) {
+          showQuickScanOverlay('err');
+        } else {
+          processing = false;
+          scanner.start();
+          scanLine.classList.add('active');
+        }
       });
     },
     { highlightScanRegion: false, highlightCodeOutline: false }
