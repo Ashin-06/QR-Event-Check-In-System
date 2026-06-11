@@ -1094,6 +1094,19 @@ def save_config():
     return jsonify(message="Configuration saved successfully.")
 
 
+@app.route("/help_content", methods=["GET"])
+def get_help_content():
+    help_path = os.path.join(BASE_DIR, "HELP.md")
+    if os.path.exists(help_path):
+        try:
+            with open(help_path, "r", encoding="utf-8") as f:
+                content = f.read()
+            return jsonify(content=content)
+        except Exception as e:
+            return jsonify(content=f"Error reading HELP.md: {str(e)}"), 500
+    return jsonify(content="HELP.md not found."), 404
+
+
 _tunnel_process = None
 _tunnel_url = None
 _tunnel_active = False

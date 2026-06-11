@@ -903,6 +903,141 @@
     @keyframes fadeOut {
       to { opacity: 0; transform: translateY(10px); }
     }
+
+    /* ── Help Guide Modal ────────────────────────────── */
+    .help-modal {
+      position: fixed;
+      inset: 0;
+      z-index: 10005;
+      background: rgba(8,12,20,0.85);
+      backdrop-filter: blur(12px);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      opacity: 0;
+      transition: opacity 0.3s ease;
+    }
+    .help-modal.active {
+      display: flex;
+      opacity: 1;
+    }
+    .help-modal-content {
+      background: #0f1624;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 28px;
+      max-width: 800px;
+      width: 90%;
+      max-height: 85vh;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+      transform: scale(0.95);
+      transition: transform 0.3s ease;
+    }
+    .help-modal.active .help-modal-content {
+      transform: scale(1);
+    }
+    .help-modal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 14px;
+      margin-bottom: 18px;
+    }
+    .help-modal-title {
+      font-size: 1.35rem;
+      font-weight: 800;
+      color: var(--accent);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .help-modal-close {
+      font-size: 1.8rem;
+      color: var(--muted);
+      cursor: pointer;
+      background: transparent;
+      border: none;
+      outline: none;
+      line-height: 1;
+    }
+    .help-modal-close:hover {
+      color: var(--text);
+    }
+    .help-modal-body {
+      overflow-y: auto;
+      flex: 1;
+      padding-right: 8px;
+      font-family: var(--font);
+      font-size: 0.9rem;
+      line-height: 1.6;
+      color: var(--text);
+    }
+    /* Rendered Markdown Styling */
+    .help-markdown h1, .help-markdown h2, .help-markdown h3 {
+      color: var(--accent2);
+      margin-top: 20px;
+      margin-bottom: 10px;
+      font-weight: 700;
+    }
+    .help-markdown h1 {
+      font-size: 1.25rem;
+      border-bottom: 1px dashed var(--border);
+      padding-bottom: 6px;
+    }
+    .help-markdown h2 {
+      font-size: 1.1rem;
+    }
+    .help-markdown h3 {
+      font-size: 0.95rem;
+    }
+    .help-markdown p {
+      margin-bottom: 12px;
+      color: var(--text);
+    }
+    .help-markdown ul, .help-markdown ol {
+      margin-left: 20px;
+      margin-bottom: 12px;
+    }
+    .help-markdown li {
+      margin-bottom: 6px;
+    }
+    .help-markdown code {
+      font-family: var(--mono);
+      background: rgba(255,255,255,0.06);
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 0.8rem;
+      color: var(--accent);
+    }
+    .help-markdown pre {
+      background: rgba(0,0,0,0.3);
+      padding: 12px;
+      border-radius: 8px;
+      overflow-x: auto;
+      margin-bottom: 14px;
+      border: 1px solid var(--border);
+    }
+    .help-markdown pre code {
+      background: transparent;
+      padding: 0;
+      color: var(--text);
+      font-size: 0.78rem;
+    }
+    .help-markdown a {
+      color: var(--accent);
+      text-decoration: none;
+    }
+    .help-markdown a:hover {
+      text-decoration: underline;
+    }
+    .help-markdown hr {
+      border: 0;
+      border-top: 1px solid var(--border);
+      margin: 16px 0;
+    }
   </style>
 </head>
 <body>
@@ -939,6 +1074,7 @@
       <div class="logo-text">Manager <span>Control Center</span></div>
     </div>
     <div style="display: flex; gap: 12px; align-items: center;">
+      <button id="btn-show-help" class="download-btn csv-dl" style="border-color: #f39c12; color: #f39c12; background: transparent; cursor: pointer; font-family: var(--font); font-size: 0.76rem; font-weight: 700; display: flex; align-items: center; gap: 6px;">📖 Help Guide</button>
       <a href="/download/excel" class="download-btn excel-dl">📊 Export Excel</a>
       <a href="/download/csv" class="download-btn csv-dl">📝 Export CSV</a>
       <a href="/" class="download-btn csv-dl" style="border-color: var(--accent2); color: var(--accent2);">📷 Scanner Dashboard</a>
@@ -1391,6 +1527,7 @@
 <script src="/static/js/socket.io.min.js"></script>
 <script src="/static/js/jquery.min.js"></script>
 <script src="/static/js/jquery.dataTables.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 <script type="module">
   import QrScanner from '/static/js/qr-scanner.min.js';
 
@@ -2837,6 +2974,47 @@
     });
   });
 
+  // ── Help Guide Modal Logic ────────────────────────────────────────────────
+  const btnShowHelp = document.getElementById('btn-show-help');
+  const helpModal = document.getElementById('help-modal');
+  const helpModalClose = document.getElementById('help-modal-close');
+  const helpModalBody = document.getElementById('help-modal-body');
+
+  if (btnShowHelp && helpModal && helpModalClose && helpModalBody) {
+    btnShowHelp.addEventListener('click', () => {
+      helpModalBody.innerHTML = '<div style="text-align: center; padding: 40px; color: var(--muted);">Loading system guide...</div>';
+      helpModal.classList.add('active');
+
+      fetch('/help_content')
+        .then(res => {
+          if (!res.ok) throw new Error('Failed to load HELP.md');
+          return res.json();
+        })
+        .then(data => {
+          // Use marked to parse the markdown content
+          if (typeof marked !== 'undefined') {
+            helpModalBody.innerHTML = marked.parse(data.content);
+          } else {
+            // Fallback plain preformatted text
+            helpModalBody.innerHTML = `<pre style="white-space: pre-wrap; font-family: var(--mono);">${escapeHtml(data.content)}</pre>`;
+          }
+        })
+        .catch(err => {
+          helpModalBody.innerHTML = `<div style="color: #ff6b6b; padding: 20px; text-align: center; font-weight: bold;">Error loading help documentation: ${escapeHtml(err.message)}</div>`;
+        });
+    });
+
+    helpModalClose.addEventListener('click', () => {
+      helpModal.classList.remove('active');
+    });
+
+    helpModal.addEventListener('click', (e) => {
+      if (e.target === helpModal) {
+        helpModal.classList.remove('active');
+      }
+    });
+  }
+
   // ── Connection status ─────────────────────────────────────────────────────
   socket.on('disconnect', () => {
     document.getElementById('network-url').textContent = 'Reconnecting...';
@@ -2930,6 +3108,20 @@
       <button class="ops-btn" id="preview-confirm-btn" style="width: auto; margin: 0; padding: 10px 24px;">Confirm & Import</button>
     </div>
   </div>
+  <!-- Help Modal -->
+  <div class="help-modal" id="help-modal">
+    <div class="help-modal-content">
+      <div class="help-modal-header">
+        <div class="help-modal-title">📖 Manager System Guide</div>
+        <button class="help-modal-close" id="help-modal-close">×</button>
+      </div>
+      <div class="help-modal-body help-markdown" id="help-modal-body">
+        <!-- Dynamically filled with HELP.md content -->
+        Loading...
+      </div>
+    </div>
+  </div>
+
 <!-- Silent Toast Container -->
 <div id="dashboard-toast-container"></div>
 </body>
