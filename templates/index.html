@@ -991,18 +991,20 @@
         <button id="reset-log-filters" style="background: transparent; border: 1px solid var(--border); border-radius: 6px; padding: 6px 12px; font-family: var(--font); font-size: 0.75rem; font-weight: 700; color: var(--muted); cursor: pointer; transition: all 0.2s; margin-top: 14px;" onmouseover="this.style.borderColor='var(--btn-csv-border-hover)'; this.style.color='var(--text)'" onmouseout="this.style.borderColor='var(--border)'; this.style.color='var(--muted)'">Reset Filters</button>
       </div>
 
-      <table id="csv-table" class="display" style="width:100%">
-        <thead>
-          <tr>
-            <th>QR Data</th>
-            <th>Count</th>
-            <th>Last Scan</th>
-            <th>Last Scanner</th>
-            <th>All Timestamps</th>
-          </tr>
-        </thead>
-        <tbody></tbody>
-      </table>
+      <div style="overflow-x: auto; -webkit-overflow-scrolling: touch; width: 100%;">
+        <table id="csv-table" class="display" style="width:100%">
+          <thead>
+            <tr>
+              <th>QR Data</th>
+              <th>Count</th>
+              <th>Last Scan</th>
+              <th>Last Scanner</th>
+              <th>All Timestamps</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
     </div>
   </div>
 
@@ -1022,19 +1024,21 @@
       <div style="margin-bottom: 15px; text-align: right;">
         <button id="clear-history-btn" style="background: rgba(255,50,50,0.1); border: 1px solid rgba(255,50,50,0.3); color: #ff6b6b; border-radius: 6px; padding: 6px 12px; font-family: var(--font); font-size: 0.75rem; font-weight: 700; cursor: pointer; transition: all 0.2s;">Clear My History</button>
       </div>
-      <table id="history-table" class="dataTable" style="width:100%">
-        <thead>
-          <tr>
-            <th>Name</th>
-            <th>Reg Number</th>
-            <th>Timestamp</th>
-            <th>Status</th>
-          </tr>
-        </thead>
-        <tbody id="history-table-body">
-          <!-- Dynamically populated -->
-        </tbody>
-      </table>
+      <div style="overflow-x: auto; -webkit-overflow-scrolling: touch; width: 100%;">
+        <table id="history-table" class="dataTable" style="width:100%">
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Reg Number</th>
+              <th>Timestamp</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody id="history-table-body">
+            <!-- Dynamically populated -->
+          </tbody>
+        </table>
+      </div>
     </div>
   </div>
 
