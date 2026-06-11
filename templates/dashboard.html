@@ -1,0 +1,2801 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Manager Control Center</title>
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/css/jquery.dataTables.min.css"/>
+  <style>
+    :root {
+      --bg:       #080c14;
+      --surface:  rgba(255,255,255,0.04);
+      --border:   rgba(255,255,255,0.10);
+      --accent:   #00f5a0;
+      --accent2:  #00b4d8;
+      --warn:     #ff6b35;
+      --text:     #e8edf5;
+      --muted:    #6b7a99;
+      --success-bg: rgba(0,245,160,0.10);
+      --warn-bg:    rgba(255,107,53,0.12);
+      --radius:   16px;
+      --font:     'Syne', sans-serif;
+      --mono:     'JetBrains Mono', monospace;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font);
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    /* ── Background mesh ──────────────────────────────── */
+    body::before {
+      content: '';
+      position: fixed; inset: 0; z-index: 0;
+      background:
+        radial-gradient(ellipse 60% 50% at 15% 20%, rgba(0,245,160,0.06) 0%, transparent 70%),
+        radial-gradient(ellipse 50% 40% at 85% 75%, rgba(0,180,216,0.06) 0%, transparent 70%);
+      pointer-events: none;
+    }
+
+    /* ── Global Scan Toast ───────────────────────────── */
+    #scan-toast {
+      position: fixed;
+      top: 20px; left: 50%; transform: translateX(-50%) translateY(-120px);
+      z-index: 9999;
+      min-width: 320px; max-width: 520px;
+      padding: 14px 20px;
+      border-radius: 14px;
+      font-family: var(--font);
+      font-size: 0.92rem;
+      font-weight: 700;
+      display: flex; align-items: center; gap: 12px;
+      backdrop-filter: blur(20px);
+      border: 1px solid rgba(255,255,255,0.15);
+      box-shadow: 0 8px 40px rgba(0,0,0,0.5);
+      transition: transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+      pointer-events: none;
+    }
+    #scan-toast.show { transform: translateX(-50%) translateY(0); }
+    #scan-toast.ok   { background: rgba(0,245,160,0.15); border-color: rgba(0,245,160,0.4); color: var(--accent); }
+    #scan-toast.warn { background: rgba(255,107,53,0.18); border-color: rgba(255,107,53,0.5); color: var(--warn); }
+    #scan-toast.err  { background: rgba(255,50,50,0.15); border-color: rgba(255,50,50,0.4); color: #ff6b6b; }
+    .toast-icon { font-size: 1.3rem; flex-shrink: 0; }
+    .toast-body { flex: 1; }
+    .toast-name { font-size: 1rem; font-weight: 800; }
+    .toast-sub  { font-size: 0.75rem; opacity: 0.75; margin-top: 2px; }
+
+    /* ── Layout ─────────────────────────────────────── */
+    .app {
+      position: relative; z-index: 1;
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 24px 24px 64px;
+    }
+
+    /* ── Network bar ─────────────────────────────────── */
+    .network-bar {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      margin-bottom: 20px;
+      padding: 10px 16px;
+      border-radius: 10px;
+      background: rgba(0,180,216,0.06);
+      border: 1px solid rgba(0,180,216,0.2);
+      font-size: 0.78rem;
+      flex-wrap: wrap;
+    }
+    .network-bar-label {
+      color: var(--muted);
+      font-weight: 600;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      flex-shrink: 0;
+    }
+    .network-url {
+      font-family: var(--mono);
+      color: var(--accent2);
+      font-weight: 500;
+      flex: 1;
+      word-break: break-all;
+    }
+    .devices-badge {
+      display: flex; align-items: center; gap: 6px;
+      padding: 4px 12px;
+      border-radius: 20px;
+      background: rgba(0,245,160,0.08);
+      border: 1px solid rgba(0,245,160,0.2);
+      color: var(--accent);
+      font-size: 0.75rem;
+      font-weight: 700;
+      flex-shrink: 0;
+      transition: all 0.3s ease;
+    }
+    .devices-dot {
+      width: 7px; height: 7px;
+      border-radius: 50%;
+      background: var(--accent);
+      animation: pulse-dot 2s ease infinite;
+    }
+    @keyframes pulse-dot {
+      0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(0,245,160,0.4); }
+      50%       { opacity: 0.7; box-shadow: 0 0 0 5px rgba(0,245,160,0); }
+    }
+
+    /* ── Header ─────────────────────────────────────── */
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 24px;
+      padding-bottom: 16px;
+      border-bottom: 1px solid var(--border);
+    }
+    .logo {
+      display: flex; align-items: center; gap: 12px;
+    }
+    .logo-icon {
+      width: 40px; height: 40px;
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      border-radius: 10px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 20px;
+    }
+    .logo-text {
+      font-size: 1.25rem; font-weight: 800;
+      letter-spacing: -0.02em;
+    }
+    .logo-text span { color: var(--accent); }
+
+    .header-time {
+      font-family: var(--mono);
+      font-size: 0.78rem;
+      color: var(--muted);
+      text-align: right;
+      line-height: 1.6;
+    }
+
+    /* ── Stats row ─────────────────────────────────── */
+    .stats-row {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+    .stat-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px 20px;
+      backdrop-filter: blur(12px);
+      transition: border-color 0.2s, transform 0.15s;
+    }
+    .stat-card:hover { border-color: rgba(255,255,255,0.2); }
+    .stat-card.bump { animation: statBump 0.4s ease; }
+    @keyframes statBump {
+      0%   { transform: scale(1); }
+      40%  { transform: scale(1.04); }
+      100% { transform: scale(1); }
+    }
+    .stat-label {
+      font-size: 0.70rem; font-weight: 600; letter-spacing: 0.08em;
+      text-transform: uppercase; color: var(--muted); margin-bottom: 6px;
+    }
+    .stat-value {
+      font-size: 1.8rem; font-weight: 800; line-height: 1;
+      font-variant-numeric: tabular-nums;
+      font-family: var(--mono);
+    }
+    .stat-card.total  .stat-value { color: var(--text); }
+    .stat-card.unique .stat-value { color: var(--accent); }
+    .stat-card.dup    .stat-value { color: var(--warn); }
+
+    /* ── Main grid layout ───────────────────────────── */
+    .dashboard-grid {
+      display: grid;
+      grid-template-columns: 420px 1fr;
+      gap: 24px;
+    }
+    @media (max-width: 1024px) {
+      .dashboard-grid { grid-template-columns: 1fr; }
+    }
+
+    /* ── Webcam Scanner styles ──────────────────────── */
+    .scanner-wrap {
+      position: relative;
+      border-radius: 12px;
+      overflow: hidden;
+      background: #000;
+      aspect-ratio: 4/3;
+    }
+    #scanner {
+      width: 100%; height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+    .scan-overlay {
+      position: absolute; inset: 0; pointer-events: none;
+    }
+    .scan-corner {
+      position: absolute; width: 24px; height: 24px;
+      border-color: var(--accent);
+      border-style: solid;
+      opacity: 0.8;
+    }
+    .scan-corner.tl { top: 12px;    left: 12px;  border-width: 3px 0 0 3px; border-radius: 4px 0 0 0; }
+    .scan-corner.tr { top: 12px;    right: 12px; border-width: 3px 3px 0 0; border-radius: 0 4px 0 0; }
+    .scan-corner.bl { bottom: 12px; left: 12px;  border-width: 0 0 3px 3px; border-radius: 0 0 0 4px; }
+    .scan-corner.br { bottom: 12px; right: 12px; border-width: 0 3px 3px 0; border-radius: 0 0 4px 0; }
+
+    .scan-line {
+      position: absolute; left: 12px; right: 12px; height: 2px;
+      background: linear-gradient(90deg, transparent, var(--accent), transparent);
+      animation: scan 2.4s ease-in-out infinite;
+      opacity: 0;
+    }
+    .scan-line.active { opacity: 0.7; }
+    @keyframes scan {
+      0%   { top: 12px; }
+      100% { top: calc(100% - 12px); }
+    }
+
+    .status-box {
+      margin-top: 14px;
+      padding: 10px 14px;
+      border-radius: 8px;
+      font-size: 0.82rem;
+      font-weight: 600;
+      min-height: 40px;
+      display: flex; align-items: center; gap: 8px;
+      background: rgba(255,255,255,0.04);
+      border: 1px solid var(--border);
+      transition: all 0.3s ease;
+    }
+    .status-box.ok   { background: var(--success-bg); border-color: rgba(0,245,160,0.3); color: var(--accent); }
+    .status-box.warn { background: var(--warn-bg);    border-color: rgba(255,107,53,0.3); color: var(--warn); }
+    .status-box.err  { background: rgba(255,50,50,0.1); border-color: rgba(255,50,50,0.3); color: #ff6b6b; }
+    .status-dot {
+      width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
+    }
+    .ok   .status-dot { background: var(--accent); box-shadow: 0 0 8px var(--accent); }
+    .warn .status-dot { background: var(--warn);   box-shadow: 0 0 8px var(--warn); }
+    .err  .status-dot { background: #ff6b6b;       box-shadow: 0 0 8px #ff6b6b; }
+
+    .restart-btn {
+      margin-top: 10px;
+      width: 100%;
+      padding: 10px;
+      background: transparent;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      font-family: var(--font);
+      font-size: 0.82rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.2s, border-color 0.2s;
+    }
+    .restart-btn:hover {
+      background: rgba(255,255,255,0.06);
+      border-color: rgba(255,255,255,0.25);
+    }
+
+    /* ── Registry Operations styles ──────────────────── */
+    .ops-tabs {
+      display: flex;
+      gap: 6px;
+      margin-bottom: 14px;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 6px;
+    }
+    .ops-tab-btn {
+      background: transparent;
+      border: none;
+      color: var(--muted);
+      font-family: var(--font);
+      font-size: 0.76rem;
+      font-weight: 700;
+      padding: 6px 10px;
+      cursor: pointer;
+      border-radius: 6px;
+      transition: all 0.2s ease;
+    }
+    .ops-tab-btn:hover {
+      color: var(--text);
+      background: rgba(255,255,255,0.02);
+    }
+    .ops-tab-btn.active {
+      color: var(--accent);
+      background: rgba(0,245,160,0.08);
+    }
+    .ops-tab-content {
+      display: none;
+    }
+    .ops-tab-content.active {
+      display: block;
+    }
+
+    .form-group {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      margin-bottom: 12px;
+    }
+    .form-label {
+      font-size: 0.68rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      color: var(--muted);
+      letter-spacing: 0.03em;
+    }
+    .form-input {
+      background: rgba(255,255,255,0.05);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 8px 12px;
+      font-family: var(--font);
+      font-size: 0.82rem;
+      color: var(--text);
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    .form-input:focus {
+      border-color: var(--accent);
+    }
+    .ops-btn {
+      width: 100%;
+      padding: 10px;
+      background: rgba(0, 245, 160, 0.08);
+      color: var(--accent);
+      border: 1px solid rgba(0, 245, 160, 0.3);
+      border-radius: 8px;
+      font-family: var(--font);
+      font-size: 0.82rem;
+      font-weight: 700;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      margin-top: 4px;
+    }
+    .ops-btn:hover {
+      background: var(--accent);
+      color: var(--bg);
+      box-shadow: 0 0 10px var(--accent);
+    }
+
+    /* ── Progress bar & logs console ─────────────────── */
+    .progress-bar-wrap {
+      background: rgba(255,255,255,0.04);
+      border-radius: 6px;
+      height: 12px;
+      overflow: hidden;
+      border: 1px solid var(--border);
+      margin-top: 8px;
+    }
+    .progress-bar-fill {
+      background: linear-gradient(90deg, var(--accent), var(--accent2));
+      width: 0%;
+      height: 100%;
+      transition: width 0.3s ease;
+    }
+    .progress-text {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.72rem;
+      color: var(--muted);
+      margin-top: 4px;
+      font-weight: 600;
+    }
+    .log-console {
+      background: rgba(0,0,0,0.5);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      font-family: var(--mono);
+      font-size: 0.70rem;
+      color: #92a2b8;
+      padding: 8px;
+      height: 110px;
+      overflow-y: auto;
+      margin-top: 10px;
+      white-space: pre-wrap;
+      line-height: 1.3;
+    }
+
+    /* ── QR Code view Modal ────────────────────────── */
+    .qr-modal {
+      position: fixed;
+      inset: 0;
+      z-index: 10000;
+      background: rgba(8,12,20,0.8);
+      backdrop-filter: blur(8px);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      opacity: 0;
+      transition: opacity 0.3s ease;
+    }
+    .qr-modal.active {
+      display: flex;
+      opacity: 1;
+    }
+    .qr-modal-content {
+      background: #0f1624;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 24px;
+      max-width: 360px;
+      width: 90%;
+      text-align: center;
+      position: relative;
+      transform: scale(0.9);
+      transition: transform 0.3s ease;
+    }
+    .qr-modal.active .qr-modal-content {
+      transform: scale(1);
+    }
+    .qr-modal-close {
+      position: absolute;
+      top: 10px;
+      right: 14px;
+      font-size: 1.3rem;
+      color: var(--muted);
+      cursor: pointer;
+      background: transparent;
+      border: none;
+    }
+    .qr-modal-close:hover {
+      color: var(--text);
+    }
+    .qr-modal-img {
+      width: 220px;
+      height: 220px;
+      margin: 14px auto;
+      background: white;
+      padding: 10px;
+      border-radius: 8px;
+      display: block;
+    }
+    .qr-modal-title {
+      font-size: 1.1rem;
+      font-weight: 700;
+      color: var(--text);
+    }
+    .qr-modal-sub {
+      font-size: 0.8rem;
+      color: var(--muted);
+      margin-top: 4px;
+    }
+    .view-qr-btn {
+      background: rgba(0, 180, 216, 0.08);
+      color: var(--accent2);
+      border: 1px solid rgba(0, 180, 216, 0.3);
+      padding: 4px 10px;
+      border-radius: 6px;
+      font-size: 0.72rem;
+      font-weight: 700;
+      cursor: pointer;
+      font-family: var(--font);
+      transition: all 0.2s ease;
+      margin-left: 6px;
+    }
+    .view-qr-btn:hover {
+      background: var(--accent2);
+      color: var(--bg);
+      box-shadow: 0 0 6px var(--accent2);
+    }
+
+    /* ── Panel & Cards ─────────────────────────────── */
+    .panel {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 24px;
+      backdrop-filter: blur(12px);
+      margin-bottom: 24px;
+    }
+    .panel-title {
+      font-size: 0.72rem; font-weight: 700; letter-spacing: 0.1em;
+      text-transform: uppercase; color: var(--muted);
+      margin-bottom: 16px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    /* ── Connected Devices Cards ───────────────────── */
+    .device-card {
+      background: rgba(255,255,255,0.02);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 14px 16px;
+      margin-bottom: 12px;
+      transition: transform 0.2s, border-color 0.2s;
+    }
+    .device-card:hover {
+      border-color: rgba(255,255,255,0.20);
+      transform: translateY(-1px);
+    }
+    .device-card.offline { opacity: 0.55; }
+    .device-card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: start;
+      margin-bottom: 8px;
+    }
+    .device-card-name { font-size: 0.92rem; font-weight: 800; color: var(--text); }
+    .device-card-ip { font-size: 0.70rem; color: var(--muted); font-family: var(--mono); }
+    .device-card-sys { font-size: 0.72rem; color: var(--muted); margin-bottom: 8px; }
+    
+    .device-card-stats {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-top: 1px solid rgba(255,255,255,0.05);
+      padding-top: 8px;
+    }
+    .device-stat-label { font-size: 0.62rem; font-weight: 700; color: var(--muted); text-transform: uppercase; }
+    .device-stat-val { font-size: 1.1rem; font-weight: 800; color: var(--accent); font-family: var(--mono); }
+    .device-stat-val.offline { color: var(--muted); }
+    .device-activity { font-size: 0.74rem; font-weight: 600; color: var(--text); max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+    /* ── Attendee Card ─────────────────────────────── */
+    .attendee-card {
+      padding: 16px 18px;
+      border-radius: 12px;
+      background: var(--success-bg);
+      border: 1px solid rgba(0,245,160,0.25);
+      margin-bottom: 8px;
+    }
+    .attendee-card.dup {
+      background: var(--warn-bg);
+      border-color: rgba(255,107,53,0.3);
+    }
+    .attendee-name { font-size: 1.05rem; font-weight: 700; margin-bottom: 4px; }
+    .attendee-card:not(.dup) .attendee-name { color: var(--accent); }
+    .attendee-card.dup .attendee-name { color: var(--warn); }
+    .attendee-field { font-size: 0.80rem; color: var(--muted); font-family: var(--mono); margin-top: 4px; }
+    .attendee-field span { color: var(--text); }
+    .attendee-source { margin-top: 8px; font-size: 0.68rem; color: var(--muted); opacity: 0.7; }
+
+    /* ── DataTables Styles ─────────────────────────── */
+    .dataTables_wrapper { color: var(--text); }
+    table.dataTable { border-collapse: collapse !important; width: 100% !important; margin-bottom: 12px !important; }
+    table.dataTable thead th {
+      background: rgba(255,255,255,0.03) !important;
+      color: var(--muted) !important;
+      font-family: var(--font) !important;
+      font-size: 0.70rem !important;
+      font-weight: 700 !important;
+      letter-spacing: 0.08em !important;
+      text-transform: uppercase !important;
+      border: none !important;
+      padding: 8px 10px !important;
+    }
+    table.dataTable tbody td {
+      background: transparent !important;
+      border-bottom: 1px solid var(--border) !important;
+      padding: 8px 10px !important;
+      font-size: 0.78rem !important;
+      font-family: var(--mono) !important;
+      color: var(--text) !important;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 180px;
+    }
+    table.dataTable tbody tr:hover td { background: rgba(255,255,255,0.03) !important; }
+    .dataTables_filter input,
+    .dataTables_length select {
+      background: rgba(255,255,255,0.05) !important;
+      border: 1px solid var(--border) !important;
+      border-radius: 8px !important;
+      color: var(--text) !important;
+      font-family: var(--font) !important;
+      padding: 4px 8px !important;
+    }
+    .dataTables_info, .dataTables_paginate { color: var(--muted) !important; font-size: 0.76rem !important; margin-top: 6px; }
+    .paginate_button { color: var(--muted) !important; }
+    .paginate_button.current { background: rgba(0,245,160,0.15) !important; border-radius: 6px !important; color: var(--accent) !important; }
+    .badge-count {
+      display: inline-block;
+      padding: 1px 6px;
+      border-radius: 20px;
+      font-size: 0.72rem; font-weight: 700;
+      background: rgba(0,245,160,0.15);
+      color: var(--accent);
+    }
+    .badge-count.multi {
+      background: rgba(255,107,53,0.15);
+      color: var(--warn);
+    }
+    .badge-status {
+      display: inline-block;
+      padding: 2px 6px;
+      border-radius: 6px;
+      font-size: 0.70rem; font-weight: 700;
+    }
+    .badge-status.scanned { background: rgba(0, 245, 160, 0.12); color: var(--accent); border: 1px solid rgba(0, 245, 160, 0.2); }
+    .badge-status.not-scanned { background: rgba(255, 255, 255, 0.04); color: var(--muted); border: 1px solid var(--border); }
+
+    /* ── Action buttons ────────────────────────────── */
+    .download-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 12px;
+      border-radius: 8px;
+      font-size: 0.76rem;
+      font-weight: 700;
+      text-decoration: none;
+      font-family: var(--font);
+      transition: all 0.2s ease;
+      border: 1px solid var(--border);
+    }
+    .excel-dl { background: rgba(0, 245, 160, 0.05); color: var(--accent); border-color: rgba(0, 245, 160, 0.2); }
+    .excel-dl:hover { background: rgba(0, 245, 160, 0.12); border-color: var(--accent); box-shadow: 0 0 12px rgba(0, 245, 160, 0.2); }
+    .csv-dl { background: rgba(255, 255, 255, 0.02); color: var(--text); }
+    .csv-dl:hover { background: rgba(255, 255, 255, 0.08); border-color: rgba(255, 255, 255, 0.25); }
+
+    .manual-checkin-btn {
+      background: rgba(0, 245, 160, 0.08);
+      color: var(--accent);
+      border: 1px solid rgba(0, 245, 160, 0.3);
+      padding: 4px 10px;
+      border-radius: 6px;
+      font-size: 0.72rem;
+      font-weight: 700;
+      cursor: pointer;
+      font-family: var(--font);
+      transition: all 0.2s ease;
+    }
+    .manual-checkin-btn:hover { background: var(--accent); color: var(--bg); box-shadow: 0 0 6px var(--accent); }
+
+    .device-name-input {
+      background: rgba(255,255,255,0.06);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 4px 10px;
+      font-family: var(--font);
+      font-size: 0.76rem;
+      color: var(--text);
+      font-weight: 600;
+      width: 140px;
+      outline: none;
+      transition: border-color 0.25s, background-color 0.25s;
+    }
+    .device-name-input:focus { border-color: var(--accent); background: rgba(255,255,255,0.12); }
+
+    /* ── Import Preview Modal ────────────────────────── */
+    .preview-modal {
+      position: fixed;
+      inset: 0;
+      z-index: 10000;
+      background: rgba(8,12,20,0.85);
+      backdrop-filter: blur(12px);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      opacity: 0;
+      transition: opacity 0.3s ease;
+    }
+    .preview-modal.active {
+      display: flex;
+      opacity: 1;
+    }
+    .preview-modal-content {
+      background: #0f1624;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 24px;
+      max-width: 900px;
+      width: 95%;
+      max-height: 90vh;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+      transform: scale(0.95);
+      transition: transform 0.3s ease;
+    }
+    .preview-modal.active .preview-modal-content {
+      transform: scale(1);
+    }
+    .preview-modal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 12px;
+      margin-bottom: 16px;
+    }
+    .preview-modal-title {
+      font-size: 1.25rem;
+      font-weight: 800;
+      color: var(--text);
+    }
+    .preview-modal-close {
+      font-size: 1.5rem;
+      color: var(--muted);
+      cursor: pointer;
+      background: transparent;
+      border: none;
+      outline: none;
+    }
+    .preview-modal-close:hover {
+      color: var(--text);
+    }
+    .preview-modal-body {
+      overflow-y: auto;
+      flex: 1;
+      padding-right: 4px;
+      margin-bottom: 16px;
+    }
+    .preview-summary-cards {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+    .preview-summary-card {
+      background: rgba(255,255,255,0.02);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px 14px;
+      text-align: center;
+    }
+    .preview-summary-label {
+      font-size: 0.65rem;
+      font-weight: 700;
+      color: var(--muted);
+      text-transform: uppercase;
+      margin-bottom: 4px;
+    }
+    .preview-summary-val {
+      font-size: 1.25rem;
+      font-weight: 800;
+      font-family: var(--mono);
+    }
+    .preview-summary-val.total   { color: var(--text); }
+    .preview-summary-val.ok      { color: var(--accent); }
+    .preview-summary-val.warning { color: var(--warn); }
+    .preview-summary-val.invalid { color: #ff6b6b; }
+
+    .preview-options {
+      display: flex;
+      gap: 16px;
+      flex-wrap: wrap;
+      background: rgba(255,255,255,0.02);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 12px;
+      margin-bottom: 16px;
+      align-items: center;
+    }
+    .preview-option-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 0.78rem;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .preview-option-item input[type="checkbox"] {
+      cursor: pointer;
+      width: 15px;
+      height: 15px;
+    }
+
+    .preview-table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+    .preview-table th, .preview-table td {
+      padding: 8px 10px;
+      text-align: left;
+      font-size: 0.76rem;
+      border-bottom: 1px solid var(--border);
+    }
+    .preview-table th {
+      background: rgba(255,255,255,0.03);
+      color: var(--muted);
+      font-weight: 700;
+      text-transform: uppercase;
+      font-family: var(--font);
+    }
+    .preview-table td {
+      font-family: var(--mono);
+    }
+    .preview-status-badge {
+      display: inline-block;
+      padding: 2px 6px;
+      border-radius: 6px;
+      font-size: 0.68rem;
+      font-weight: 700;
+    }
+    .preview-status-badge.ok            { background: var(--success-bg); color: var(--accent); border: 1px solid rgba(0,245,160,0.2); }
+    .preview-status-badge.file-dup-reg  { background: rgba(255,107,53,0.1); color: var(--warn); border: 1px solid rgba(255,107,53,0.2); }
+    .preview-status-badge.file-dup-email{ background: rgba(255,107,53,0.1); color: var(--warn); border: 1px solid rgba(255,107,53,0.2); }
+    .preview-status-badge.db-dup-reg    { background: rgba(255,50,50,0.1); color: #ff6b6b; border: 1px solid rgba(255,50,50,0.2); }
+    .preview-status-badge.db-dup-email  { background: rgba(255,50,50,0.1); color: #ff6b6b; border: 1px solid rgba(255,50,50,0.2); }
+    .preview-status-badge.missing       { background: rgba(255,50,50,0.1); color: #ff6b6b; border: 1px solid rgba(255,50,50,0.2); }
+
+    .preview-modal-footer {
+      display: flex;
+      justify-content: flex-end;
+      gap: 12px;
+      border-top: 1px solid var(--border);
+      padding-top: 16px;
+    }
+    
+    /* ── Event Tree Styles ──────────────────────────── */
+    .event-tree-item {
+      list-style-type: none;
+      padding-left: 16px;
+      position: relative;
+    }
+    .event-tree-node {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 4px 8px;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      margin-top: 2px;
+    }
+    .event-tree-node:hover {
+      background: rgba(255, 255, 255, 0.04);
+    }
+    .event-tree-node.active-node {
+      background: rgba(0, 245, 160, 0.1);
+      border: 1px solid rgba(0, 245, 160, 0.2);
+      color: var(--accent);
+      font-weight: 700;
+    }
+    .event-tree-node-name {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    
+    /* ── Dashboard Toast Styles ────────────────────── */
+    #dashboard-toast-container {
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      z-index: 10000;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      max-width: 350px;
+      pointer-events: none;
+    }
+    .dash-toast {
+      background: rgba(8, 12, 20, 0.92);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 12px 16px;
+      backdrop-filter: blur(20px);
+      box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      color: var(--text);
+      font-size: 0.82rem;
+      pointer-events: auto;
+      animation: slideInRight 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+    }
+    .dash-toast.ok { border-color: rgba(0, 245, 160, 0.4); }
+    .dash-toast.warn { border-color: rgba(255, 107, 53, 0.4); }
+    .dash-toast.err { border-color: rgba(255, 50, 50, 0.4); }
+    
+    @keyframes slideInRight {
+      from { opacity: 0; transform: translateX(100%); }
+      to { opacity: 1; transform: translateX(0); }
+    }
+    .dash-toast.fade-out {
+      animation: fadeOut 0.4s ease forwards;
+    }
+    @keyframes fadeOut {
+      to { opacity: 0; transform: translateY(10px); }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ── Global Scan Toast ── -->
+<div id="scan-toast">
+  <span class="toast-icon" id="toast-icon">✅</span>
+  <div class="toast-body">
+    <div class="toast-name" id="toast-name"></div>
+    <div class="toast-sub"  id="toast-sub"></div>
+  </div>
+</div>
+
+<div class="app">
+
+  <!-- Network Info Bar -->
+  <div class="network-bar" id="network-bar">
+    <span class="network-bar-label">📡 Other Devices:</span>
+    <span class="network-url" id="network-url">Loading…</span>
+    <div style="display: flex; align-items: center; gap: 8px; margin: 0 16px;">
+      <span class="network-bar-label">This Device Label:</span>
+      <input type="text" id="device-name-input" class="device-name-input" placeholder="Device Label" />
+    </div>
+    <div class="devices-badge" id="devices-badge">
+      <div class="devices-dot"></div>
+      <span id="devices-count">1</span>&nbsp;online
+    </div>
+  </div>
+
+  <!-- Header -->
+  <header>
+    <div class="logo">
+      <div class="logo-icon">⬢</div>
+      <div class="logo-text">Manager <span>Control Center</span></div>
+    </div>
+    <div style="display: flex; gap: 12px; align-items: center;">
+      <a href="/download/excel" class="download-btn excel-dl">📊 Export Excel</a>
+      <a href="/download/csv" class="download-btn csv-dl">📝 Export CSV</a>
+      <a href="/" class="download-btn csv-dl" style="border-color: var(--accent2); color: var(--accent2);">📷 Scanner Dashboard</a>
+      <div class="header-time">
+        <div id="live-date"></div>
+        <div id="live-time"></div>
+      </div>
+    </div>
+  </header>
+
+  <!-- Stats -->
+  <div class="stats-row">
+    <div class="stat-card total" id="card-total">
+      <div class="stat-label">Total Scans</div>
+      <div class="stat-value" id="stat-total">—</div>
+    </div>
+    <div class="stat-card unique" id="card-unique">
+      <div class="stat-label">Unique Check-ins</div>
+      <div class="stat-value" id="stat-unique">—</div>
+    </div>
+    <div class="stat-card dup" id="card-dup">
+      <div class="stat-label">Duplicate Scans</div>
+      <div class="stat-value" id="stat-dup">—</div>
+    </div>
+  </div>
+
+  <!-- Dashboard Grid Layout -->
+  <div class="dashboard-grid">
+  
+    <!-- Left Column (Scanner, Operations, Devices, Stats) -->
+    <div>
+      <!-- 📁 Event Explorer Panel -->
+      <div class="panel" style="margin-bottom: 20px;">
+        <div class="panel-title">📁 Event Explorer</div>
+        <div style="margin-bottom: 12px; display: flex; gap: 8px;">
+          <button id="btn-create-event" class="ops-btn" style="flex: 1; margin: 0; font-size: 0.72rem; padding: 6px 0;">+ New Event</button>
+          <button id="btn-create-subevent" class="ops-btn" style="flex: 1; margin: 0; font-size: 0.72rem; padding: 6px 0;">+ New Sub-Event</button>
+        </div>
+        <div style="font-size: 0.75rem; margin-bottom: 8px; color: var(--muted); font-weight: 600; text-transform: uppercase;">Active Folder:</div>
+        <div id="active-event-display" style="font-family: var(--mono); font-size: 0.85rem; color: var(--accent); padding: 8px 12px; background: rgba(0, 245, 160, 0.08); border: 1px solid rgba(0, 245, 160, 0.2); border-radius: 8px; margin-bottom: 12px; word-break: break-all;">Default Event</div>
+        
+        <div id="event-tree-container" style="max-height: 250px; overflow-y: auto; border: 1px solid var(--border); border-radius: 8px; padding: 10px; background: rgba(0,0,0,0.15);">
+          <!-- Hierarchical list of events -->
+          <ul id="event-tree-root" style="list-style-type: none; padding-left: 0; font-size: 0.82rem; line-height: 1.8;">
+            <li>Loading events...</li>
+          </ul>
+        </div>
+      </div>
+
+      <!-- 📡 Public Tunneling Panel -->
+      <div class="panel" style="margin-bottom: 20px;">
+        <div class="panel-title">📡 Public Internet Tunnel</div>
+        <div style="font-size: 0.78rem; color: var(--muted); line-height: 1.4; margin-bottom: 12px;">
+          Expose your local dashboard to the internet so scanners on other networks can connect.
+        </div>
+        <div id="tunnel-status-area" style="display: flex; flex-direction: column; gap: 10px; margin-bottom: 12px;">
+          <div style="display: flex; align-items: center; justify-content: space-between;">
+            <span style="font-size: 0.75rem; font-weight: 700; color: var(--muted); text-transform: uppercase;">Tunnel Status:</span>
+            <span id="tunnel-status-badge" class="badge-status not-scanned" style="padding: 2px 8px; font-size: 0.68rem;">Inactive</span>
+          </div>
+          <div id="tunnel-url-container" style="display: none;">
+            <div style="font-size: 0.7rem; font-weight: 700; color: var(--muted); text-transform: uppercase; margin-bottom: 3px;">Tunnel Link:</div>
+            <a id="tunnel-public-url" href="#" target="_blank" style="font-family: var(--mono); font-size: 0.78rem; color: var(--accent2); text-decoration: none; word-break: break-all;">Connecting...</a>
+            
+            <div style="text-align: center; margin-top: 12px; background: white; padding: 10px; border-radius: 8px; width: fit-content; margin-left: auto; margin-right: auto;">
+              <img id="tunnel-qr-img" src="" alt="Scan to connect" style="width: 130px; height: 130px; display: block;" />
+            </div>
+            <div style="text-align: center; font-size: 0.65rem; color: var(--muted); margin-top: 4px;">Scan QR to connect scanner devices</div>
+          </div>
+        </div>
+        <button id="btn-toggle-tunnel" class="ops-btn" style="margin: 0;">Start Public Tunnel</button>
+      </div>
+
+      <!-- Webcam Scanner Panel (Local scanner on this machine) -->
+      <div class="panel" style="margin-bottom: 20px;">
+        <div class="panel-title">📷 Webcam Scanner (This Machine)</div>
+        <div class="scanner-wrap">
+          <video id="scanner" autoplay playsinline muted></video>
+          <div class="scan-overlay">
+            <div class="scan-corner tl"></div>
+            <div class="scan-corner tr"></div>
+            <div class="scan-corner bl"></div>
+            <div class="scan-corner br"></div>
+            <div class="scan-line" id="scan-line"></div>
+          </div>
+        </div>
+        <div class="status-box" id="status">
+          <div class="status-dot"></div>
+          <span id="status-text">Initializing Camera...</span>
+        </div>
+        <button class="restart-btn" id="restart-btn">↺ Restart Scanner</button>
+      </div>
+
+      <!-- Last Scanned Attendee Card -->
+      <div class="panel" style="margin-bottom: 20px;">
+        <div class="panel-title">Last Checked In</div>
+        <div id="att-empty" style="color:var(--muted); font-size:0.82rem; line-height:1.5;">
+          Waiting for check-ins... Scans from all active devices will display here.
+        </div>
+        <div class="attendee-card" id="attendee-card" style="display: none;">
+          <div class="attendee-name" id="att-name">—</div>
+          <div class="attendee-field">Email &nbsp;&nbsp; <span id="att-email">—</span></div>
+          <div class="attendee-field">Reg No &nbsp; <span id="att-reg">—</span></div>
+          <div class="attendee-field">Status &nbsp;&nbsp; <span id="att-status">—</span></div>
+          <div class="attendee-source" id="att-source"></div>
+        </div>
+      </div>
+
+      <!-- Registry Operations Command Panel -->
+      <div class="panel" style="margin-bottom: 20px;">
+        <div class="panel-title">🛠️ Registry Operations</div>
+        
+        <div class="ops-tabs">
+          <button class="ops-tab-btn active" id="ops-tab-add-btn">Add Guest</button>
+          <button class="ops-tab-btn" id="ops-tab-import-btn">Import Spreadsheet</button>
+          <button class="ops-tab-btn" id="ops-tab-email-btn">Bulk Send</button>
+          <button class="ops-tab-btn" id="ops-tab-settings-btn">Settings & Templates</button>
+        </div>
+
+        <!-- Tab 1: Add Guest Form -->
+        <div class="ops-tab-content active" id="ops-tab-add-content">
+          <form id="add-guest-form" onsubmit="return false;">
+            <div class="form-group">
+              <label class="form-label">Name</label>
+              <input type="text" id="add-guest-name" class="form-input" placeholder="e.g. John Doe" required />
+            </div>
+            <div class="form-group">
+              <label class="form-label">Email Address</label>
+              <input type="email" id="add-guest-email" class="form-input" placeholder="e.g. john@example.com" required />
+            </div>
+            <div class="form-group">
+              <label class="form-label">Phone Number</label>
+              <input type="text" id="add-guest-phone" class="form-input" placeholder="e.g. +919876543210 (optional)" />
+            </div>
+            <div class="form-group">
+              <label class="form-label">Registration Number</label>
+              <input type="text" id="add-guest-reg" class="form-input" placeholder="e.g. TCONF101" required />
+            </div>
+            
+            <!-- Dynamic Custom Fields Container -->
+            <div id="dynamic-guest-fields"></div>
+            
+            <button type="submit" class="ops-btn" id="add-guest-submit">Register Guest & Generate QR</button>
+          </form>
+        </div>
+
+        <!-- Tab 2: Import Spreadsheet Form -->
+        <div class="ops-tab-content" id="ops-tab-import-content">
+          <form id="import-csv-form" onsubmit="return false;">
+            <div class="form-group">
+              <label class="form-label">Upload Spreadsheet File (CSV/Excel)</label>
+              <input type="file" id="import-csv-file" accept=".csv,.xlsx" class="form-input" required />
+              <div style="font-size:0.68rem; color:var(--muted); margin-top:2px;">Must contain columns: Name, Email Address, Registration Number. Phone is optional.</div>
+            </div>
+            
+            <!-- Destination Type Selectors -->
+            <div class="form-group" style="margin-bottom: 12px;">
+              <label class="form-label">Import Destination</label>
+              <div style="display: flex; gap: 12px; margin-top: 4px;">
+                <label style="font-size: 0.78rem; cursor: pointer; display: flex; align-items: center; gap: 4px;">
+                  <input type="radio" name="import-dest-type" value="current" checked />
+                  <span>Current Active Event</span>
+                </label>
+                <label style="font-size: 0.78rem; cursor: pointer; display: flex; align-items: center; gap: 4px;">
+                  <input type="radio" name="import-dest-type" value="new" />
+                  <span>Create New Event</span>
+                </label>
+              </div>
+            </div>
+            <div id="new-event-name-group" class="form-group" style="display: none; margin-bottom: 12px;">
+              <label class="form-label">New Event Folder Name</label>
+              <input type="text" id="import-new-event-name" class="form-input" placeholder="e.g. AnnualMeet2026" />
+            </div>
+
+            <div style="display:flex; align-items:center; gap:8px; margin-bottom:12px;">
+              <input type="checkbox" id="import-csv-reset" style="cursor:pointer;" />
+              <label for="import-csv-reset" style="font-size:0.75rem; color:var(--text); cursor:pointer; font-weight:600;">Reset & Overwrite Registry</label>
+            </div>
+            <button type="submit" class="ops-btn" id="import-csv-submit">Upload & Preview Registry</button>
+          </form>
+        </div>
+
+        <!-- Tab 3: Bulk Send campaigns -->
+        <div class="ops-tab-content" id="ops-tab-email-content">
+          <div style="display:flex; gap:6px; margin-bottom:14px; background:rgba(255,255,255,0.02); padding:4px; border-radius:8px; border:1px solid var(--border);">
+            <button class="ops-tab-btn active" id="subtab-email-btn" style="flex:1; padding:6px 0; font-size: 0.72rem;">📧 Email</button>
+            <button class="ops-tab-btn" id="subtab-whatsapp-btn" style="flex:1; padding:6px 0; font-size: 0.72rem;">💬 WhatsApp</button>
+          </div>
+
+          <!-- Channel 1: Email Form -->
+          <div id="subtab-email-content">
+            <form id="send-emails-form" onsubmit="return false;">
+              <div class="form-group">
+                <label class="form-label">Sender Gmail</label>
+                <input type="email" id="email-sender" class="form-input" placeholder="e.g. you@gmail.com" required />
+              </div>
+              <div class="form-group">
+                <label class="form-label">Gmail App Password</label>
+                <input type="password" id="email-password" class="form-input" placeholder="App-specific password" required />
+              </div>
+              <div class="form-group">
+                <label class="form-label">Email Subject</label>
+                <input type="text" id="email-subject" class="form-input" value="Your Event QR Code" required />
+              </div>
+              <div class="form-group">
+                <label class="form-label">Event Name</label>
+                <input type="text" id="email-event" class="form-input" value="TechConf 2026" required />
+              </div>
+              <button type="submit" class="ops-btn" id="send-emails-submit">Start Bulk Email Campaign</button>
+            </form>
+            
+            <!-- Email Progress Area -->
+            <div id="email-progress-area" style="display:none; margin-top:16px;">
+              <div class="progress-bar-wrap">
+                <div class="progress-bar-fill" id="email-progress-bar"></div>
+              </div>
+              <div class="progress-text">
+                <span id="email-progress-status">Idle</span>
+                <span id="email-progress-count">0/0</span>
+              </div>
+              <div class="log-console" id="email-log-console"></div>
+            </div>
+          </div>
+
+          <!-- Channel 2: WhatsApp Form -->
+          <div id="subtab-whatsapp-content" style="display:none;">
+            <form id="send-whatsapp-form" onsubmit="return false;">
+              <div class="form-group">
+                <label class="form-label">Twilio Account SID</label>
+                <input type="text" id="wa-sid" class="form-input" placeholder="AC..." required />
+              </div>
+              <div class="form-group">
+                <label class="form-label">Twilio Auth Token</label>
+                <input type="password" id="wa-token" class="form-input" placeholder="Auth Token" required />
+              </div>
+              <div class="form-group">
+                <label class="form-label">Twilio WhatsApp Number</label>
+                <input type="text" id="wa-sender" class="form-input" placeholder="+14155238886" required />
+                <div style="font-size:0.65rem; color:var(--muted); margin-top:2px;">Include '+' and country code (e.g. +14155238886)</div>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Event Name</label>
+                <input type="text" id="wa-event" class="form-input" value="TechConf 2026" required />
+              </div>
+              <button type="submit" class="ops-btn" id="send-whatsapp-submit">Start Bulk WhatsApp Campaign</button>
+            </form>
+            
+            <!-- WhatsApp Progress Area -->
+            <div id="whatsapp-progress-area" style="display:none; margin-top:16px;">
+              <div class="progress-bar-wrap">
+                <div class="progress-bar-fill" id="whatsapp-progress-bar"></div>
+              </div>
+              <div class="progress-text">
+                <span id="whatsapp-progress-status">Idle</span>
+                <span id="whatsapp-progress-count">0/0</span>
+              </div>
+              <div class="log-console" id="whatsapp-log-console"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tab 4: Settings & Templates Form -->
+        <div class="ops-tab-content" id="ops-tab-settings-content">
+          <form id="settings-form" onsubmit="return false;">
+            <div class="form-group">
+              <label class="form-label">Event Name Template</label>
+              <input type="text" id="cfg-event-name" class="form-input" placeholder="e.g. Annual Meet 2026" required />
+            </div>
+            <div class="form-group">
+              <label class="form-label">Email Campaign Subject</label>
+              <input type="text" id="cfg-email-subject" class="form-input" placeholder="Your Event QR Code" required />
+            </div>
+            <div class="form-group">
+              <label class="form-label">Email Body Template</label>
+              <textarea id="cfg-email-template" class="form-input" style="height: 120px; font-family: var(--mono); font-size: 0.72rem; resize: vertical;"></textarea>
+              <div style="font-size:0.62rem; color:var(--muted); margin-top:2px;">Placeholders: {Name}, {Email Address}, {Registration Number}, {Phone Number}, {Unique ID}</div>
+            </div>
+            <div class="form-group">
+              <label class="form-label">WhatsApp Campaign Template</label>
+              <textarea id="cfg-whatsapp-template" class="form-input" style="height: 100px; font-family: var(--mono); font-size: 0.72rem; resize: vertical;"></textarea>
+              <div style="font-size:0.62rem; color:var(--muted); margin-top:2px;">Placeholders: {Name}, {Registration Number}, {Event}, {QR_URL}</div>
+            </div>
+            
+            <hr style="border: none; border-top: 1px solid var(--border); margin: 16px 0;" />
+            <div style="font-size: 0.75rem; font-weight: 700; color: var(--accent); margin-bottom: 12px; text-transform: uppercase;">Post-Scan Auto Notification</div>
+            
+            <div class="form-group">
+              <label class="form-label">Auto Send Channels on Scan Check-In</label>
+              <select id="cfg-scan-channels" class="form-input" style="cursor: pointer;">
+                <option value="none">None (Disabled)</option>
+                <option value="email">Email Only</option>
+                <option value="whatsapp">WhatsApp Only</option>
+                <option value="both">Both Email & WhatsApp</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Post-Scan Check-In Message Template</label>
+              <textarea id="cfg-scan-template" class="form-input" style="height: 80px; font-family: var(--mono); font-size: 0.72rem; resize: vertical;"></textarea>
+              <div style="font-size:0.62rem; color:var(--muted); margin-top:2px;">Placeholders: {Name}, {Location}, {Time}, {Registration Number}</div>
+            </div>
+            
+            <button type="submit" class="ops-btn" id="settings-save-btn">Save Configurations</button>
+          </form>
+        </div>
+
+      </div>
+
+      <!-- Connected Devices Monitor -->
+      <div class="panel">
+        <div class="panel-title">📡 Active Scanners</div>
+        <div id="devices-grid">
+          <!-- Device cards dynamically inserted -->
+        </div>
+      </div>
+    </div>
+
+    <!-- Right Column (Tables and Filters) -->
+    <div>
+      <!-- Live Check-In Log Table -->
+      <div class="panel">
+        <div class="panel-title">Live Scan Log</div>
+
+        <!-- Filter Bar -->
+        <div style="display: flex; gap: 14px; margin-bottom: 16px; padding: 12px; background: rgba(255,255,255,0.02); border: 1px solid var(--border); border-radius: 10px; align-items: center; flex-wrap: wrap;">
+          <span style="font-size: 0.72rem; font-weight: 700; text-transform: uppercase; color: var(--muted); letter-spacing: 0.05em;">🔍 Filters:</span>
+          
+          <div style="display: flex; flex-direction: column; gap: 3px;">
+            <label style="font-size: 0.60rem; font-weight: 700; text-transform: uppercase; color: var(--muted);">Scanner Device</label>
+            <select id="filter-log-device" style="background: rgba(255,255,255,0.06); border: 1px solid var(--border); border-radius: 6px; padding: 4px 8px; font-family: var(--font); font-size: 0.76rem; color: var(--text); outline: none; min-width: 130px; cursor: pointer;">
+              <option value="">All Devices</option>
+            </select>
+          </div>
+
+          <div style="display: flex; flex-direction: column; gap: 3px;">
+            <label style="font-size: 0.60rem; font-weight: 700; text-transform: uppercase; color: var(--muted);">Scan Count</label>
+            <select id="filter-log-type" style="background: rgba(255,255,255,0.06); border: 1px solid var(--border); border-radius: 6px; padding: 4px 8px; font-family: var(--font); font-size: 0.76rem; color: var(--text); outline: none; min-width: 130px; cursor: pointer;">
+              <option value="">All Scans</option>
+              <option value="unique">Unique Check-ins Only</option>
+              <option value="duplicate">Duplicate Scans Only</option>
+            </select>
+          </div>
+
+          <div style="display: flex; flex-direction: column; gap: 3px;">
+            <label style="font-size: 0.60rem; font-weight: 700; text-transform: uppercase; color: var(--muted);">Time Window</label>
+            <select id="filter-log-time" style="background: rgba(255,255,255,0.06); border: 1px solid var(--border); border-radius: 6px; padding: 4px 8px; font-family: var(--font); font-size: 0.76rem; color: var(--text); outline: none; min-width: 130px; cursor: pointer;">
+              <option value="">All Time</option>
+              <option value="5">Last 5 Minutes</option>
+              <option value="15">Last 15 Minutes</option>
+              <option value="60">Last 1 Hour</option>
+            </select>
+          </div>
+          
+          <button id="reset-log-filters" style="background: transparent; border: 1px solid var(--border); border-radius: 6px; padding: 5px 10px; font-family: var(--font); font-size: 0.72rem; font-weight: 700; color: var(--muted); cursor: pointer; transition: all 0.2s; margin-top: 11px;" onmouseover="this.style.borderColor='rgba(255,255,255,0.20)'; this.style.color='var(--text)'" onmouseout="this.style.borderColor='var(--border)'; this.style.color='var(--muted)'">Reset Filters</button>
+        </div>
+
+        <table id="csv-table" class="display" style="width:100%">
+          <thead>
+            <tr>
+              <th>QR Data</th>
+              <th>Count</th>
+              <th>Last Scan</th>
+              <th>Last Scanner</th>
+              <th>All Timestamps</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+
+      <!-- Attendee Master Registry Table -->
+      <div class="panel">
+        <div class="panel-title">Registered Attendee List</div>
+
+        <!-- Filter Bar -->
+        <div style="display: flex; gap: 14px; margin-bottom: 16px; padding: 12px; background: rgba(255,255,255,0.02); border: 1px solid var(--border); border-radius: 10px; align-items: center; flex-wrap: wrap;">
+          <span style="font-size: 0.72rem; font-weight: 700; text-transform: uppercase; color: var(--muted); letter-spacing: 0.05em;">🔍 Filters:</span>
+          
+          <div style="display: flex; flex-direction: column; gap: 3px;">
+            <label style="font-size: 0.60rem; font-weight: 700; text-transform: uppercase; color: var(--muted);">Check-In Status</label>
+            <select id="filter-reg-status" style="background: rgba(255,255,255,0.06); border: 1px solid var(--border); border-radius: 6px; padding: 4px 8px; font-family: var(--font); font-size: 0.76rem; color: var(--text); outline: none; min-width: 150px; cursor: pointer;">
+              <option value="">All Registrations</option>
+              <option value="scanned">Checked In Only</option>
+              <option value="not-scanned">Not Checked In Only</option>
+            </select>
+          </div>
+        </div>
+
+        <table id="registry-table" class="display" style="width:100%">
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Email</th>
+              <th>Phone</th>
+              <th>Reg Number</th>
+              <th>Status</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+
+  </div>
+
+</div>
+
+<script src="/static/js/socket.io.min.js"></script>
+<script src="/static/js/jquery.min.js"></script>
+<script src="/static/js/jquery.dataTables.min.js"></script>
+<script type="module">
+  import QrScanner from '/static/js/qr-scanner.min.js';
+
+  // Helper to escape HTML safely
+  function escapeHtml(str) {
+    if (!str) return '';
+    return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
+  // Get device browser/OS info
+  function getDeviceType() {
+    const ua = navigator.userAgent;
+    let os = "Device";
+    if (/Windows/i.test(ua)) os = "Windows";
+    else if (/Mac/i.test(ua)) os = "Mac";
+    else if (/iPhone|iPad|iPod/i.test(ua)) os = "iOS";
+    else if (/Android/i.test(ua)) os = "Android";
+    else if (/Linux/i.test(ua)) os = "Linux";
+
+    let br = "Browser";
+    if (/Chrome/i.test(ua)) br = "Chrome";
+    else if (/Firefox/i.test(ua)) br = "Firefox";
+    else if (/Safari/i.test(ua)) br = "Safari";
+    else if (/Edge/i.test(ua)) br = "Edge";
+
+    return `${os} ${br}`;
+  }
+
+  // Set up local device registration info (registers as 'Manager Dashboard')
+  const devNameInput = document.getElementById('device-name-input');
+  let deviceId = localStorage.getItem('device_id');
+  if (!deviceId) {
+    deviceId = 'dev_' + Math.random().toString(36).substr(2, 9);
+    localStorage.setItem('device_id', deviceId);
+  }
+  
+  let deviceName = localStorage.getItem('device_name');
+  if (!deviceName) {
+    deviceName = "Manager Console";
+    localStorage.setItem('device_name', deviceName);
+  }
+  devNameInput.value = deviceName;
+
+  // ── Webcam Scanner Setup ──────────────────────────────────────────────────
+  const video = document.getElementById('scanner');
+  const statusBox = document.getElementById('status');
+  const statusText = document.getElementById('status-text');
+  const scanLine = document.getElementById('scan-line');
+  let processing = false;
+  let scanTimeoutId = null;
+
+  function setStatus(msg, type = '') {
+    if (!statusBox || !statusText) return;
+    statusBox.className = `status-box ${type}`;
+    statusText.textContent = msg + ' — ' + new Date().toLocaleTimeString();
+  }
+
+  const scanner = new QrScanner(
+    video,
+    result => {
+      if (processing) return;
+      processing = true;
+      scanner.stop();
+      if (scanLine) scanLine.classList.remove('active');
+      setStatus('Processing scan…');
+
+      // Safety timeout — re-enable if socket never fires within 8s
+      scanTimeoutId = setTimeout(() => {
+        processing = false;
+        scanner.start();
+        if (scanLine) scanLine.classList.add('active');
+        setStatus('Scanning…');
+      }, 8000);
+
+      fetch('/scan', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ qr_data: result.data ?? result, device_id: deviceId })
+      })
+      .then(r => {
+        if (!r.ok) return r.json().then(e => { throw new Error(e.message || 'Server error'); });
+        return r.json();
+      })
+      .then(data => {
+        const type = data.is_duplicate ? 'warn' : 'ok';
+        setStatus(data.message, type);
+      })
+      .catch(e => {
+        setStatus(e.message, 'err');
+        clearTimeout(scanTimeoutId);
+        processing = false;
+        scanner.start();
+        if (scanLine) scanLine.classList.add('active');
+      });
+    },
+    { highlightScanRegion: false, highlightCodeOutline: false }
+  );
+
+  // Start webcam
+  navigator.mediaDevices.getUserMedia({
+    video: { facingMode: 'environment', width: { ideal: 640 }, height: { ideal: 480 } }
+  })
+  .then(stream => {
+    video.srcObject = stream;
+    video.play();
+    scanner.start();
+    if (scanLine) scanLine.classList.add('active');
+    setStatus('Scanning…');
+  })
+  .catch(e => setStatus('Camera error: ' + e.message, 'err'));
+
+  document.getElementById('restart-btn').addEventListener('click', () => {
+    clearTimeout(scanTimeoutId);
+    processing = false;
+    scanner.start();
+    if (scanLine) scanLine.classList.add('active');
+    setStatus('Scanning…');
+  });
+
+  // ── Operations Tab Toggling ───────────────────────────────────────────────
+  const opsTabAddBtn = document.getElementById('ops-tab-add-btn');
+  const opsTabImportBtn = document.getElementById('ops-tab-import-btn');
+  const opsTabEmailBtn = document.getElementById('ops-tab-email-btn');
+  const opsTabSettingsBtn = document.getElementById('ops-tab-settings-btn');
+
+  const opsTabAddContent = document.getElementById('ops-tab-add-content');
+  const opsTabImportContent = document.getElementById('ops-tab-import-content');
+  const opsTabEmailContent = document.getElementById('ops-tab-email-content');
+  const opsTabSettingsContent = document.getElementById('ops-tab-settings-content');
+
+  function deactivateAllOpsTabs() {
+    opsTabAddBtn.classList.remove('active');
+    opsTabImportBtn.classList.remove('active');
+    opsTabEmailBtn.classList.remove('active');
+    opsTabSettingsBtn.classList.remove('active');
+    opsTabAddContent.classList.remove('active');
+    opsTabImportContent.classList.remove('active');
+    opsTabEmailContent.classList.remove('active');
+    opsTabSettingsContent.classList.remove('active');
+  }
+
+  opsTabAddBtn.addEventListener('click', () => {
+    deactivateAllOpsTabs();
+    opsTabAddBtn.classList.add('active');
+    opsTabAddContent.classList.add('active');
+  });
+
+  opsTabImportBtn.addEventListener('click', () => {
+    deactivateAllOpsTabs();
+    opsTabImportBtn.classList.add('active');
+    opsTabImportContent.classList.add('active');
+  });
+
+  opsTabEmailBtn.addEventListener('click', () => {
+    deactivateAllOpsTabs();
+    opsTabEmailBtn.classList.add('active');
+    opsTabEmailContent.classList.add('active');
+  });
+
+  opsTabSettingsBtn.addEventListener('click', () => {
+    deactivateAllOpsTabs();
+    opsTabSettingsBtn.classList.add('active');
+    opsTabSettingsContent.classList.add('active');
+    loadSettings();
+  });
+
+  // ── Tab 3 Sub-tabs Toggling ────────────────────────────────────────────────
+  const subtabEmailBtn = document.getElementById('subtab-email-btn');
+  const subtabWhatsappBtn = document.getElementById('subtab-whatsapp-btn');
+  const subtabEmailContent = document.getElementById('subtab-email-content');
+  const subtabWhatsappContent = document.getElementById('subtab-whatsapp-content');
+
+  if (subtabEmailBtn && subtabWhatsappBtn) {
+    subtabEmailBtn.addEventListener('click', () => {
+      subtabEmailBtn.classList.add('active');
+      subtabWhatsappBtn.classList.remove('active');
+      subtabEmailContent.style.display = 'block';
+      subtabWhatsappContent.style.display = 'none';
+    });
+
+    subtabWhatsappBtn.addEventListener('click', () => {
+      subtabWhatsappBtn.classList.add('active');
+      subtabEmailBtn.classList.remove('active');
+      subtabWhatsappContent.style.display = 'block';
+      subtabEmailContent.style.display = 'none';
+    });
+  }
+
+  // ── Import Destination Destination Selector Toggles ─────────────────────────
+  const importDestRadios = document.getElementsByName('import-dest-type');
+  const newEventNameGroup = document.getElementById('new-event-name-group');
+  const importNewEventNameInput = document.getElementById('import-new-event-name');
+
+  importDestRadios.forEach(radio => {
+    radio.addEventListener('change', (e) => {
+      if (e.target.value === 'new') {
+        newEventNameGroup.style.display = 'block';
+        importNewEventNameInput.required = true;
+      } else {
+        newEventNameGroup.style.display = 'none';
+        importNewEventNameInput.required = false;
+      }
+    });
+  });
+
+  const fileInput = document.getElementById('import-csv-file');
+  if (fileInput) {
+    fileInput.addEventListener('change', () => {
+      if (fileInput.files.length) {
+        const fname = fileInput.files[0].name.replace(/\.[^/.]+$/, "");
+        importNewEventNameInput.value = fname.replace(/[^a-zA-Z0-9_\-\s]/g, "");
+      }
+    });
+  }
+
+  // ── Settings Loader & Saver ────────────────────────────────────────────────
+  function loadSettings() {
+    fetch('/get_config')
+      .then(r => r.json())
+      .then(cfg => {
+        document.getElementById('cfg-event-name').value = cfg.event_name_template || '';
+        document.getElementById('cfg-email-subject').value = cfg.email_subject || '';
+        document.getElementById('cfg-email-template').value = cfg.email_template || '';
+        document.getElementById('cfg-whatsapp-template').value = cfg.whatsapp_template || '';
+        document.getElementById('cfg-scan-channels').value = cfg.scan_notify_channels || 'none';
+        document.getElementById('cfg-scan-template').value = cfg.scan_notify_template || '';
+      })
+      .catch(err => {
+        console.error('Error loading config:', err);
+      });
+  }
+
+  document.getElementById('settings-form').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const saveBtn = document.getElementById('settings-save-btn');
+    saveBtn.disabled = true;
+    saveBtn.textContent = 'Saving...';
+
+    const payload = {
+      event_name_template: document.getElementById('cfg-event-name').value.trim(),
+      email_subject: document.getElementById('cfg-email-subject').value.trim(),
+      email_template: document.getElementById('cfg-email-template').value,
+      whatsapp_template: document.getElementById('cfg-whatsapp-template').value,
+      scan_notify_channels: document.getElementById('cfg-scan-channels').value,
+      scan_notify_template: document.getElementById('cfg-scan-template').value
+    };
+
+    fetch('/save_config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    })
+    .then(r => r.json())
+    .then(data => {
+      showDashboardToast('Settings Saved', data.message, 'ok');
+    })
+    .catch(err => {
+      showDashboardToast('Error Saving', err.message, 'err');
+    })
+    .finally(() => {
+      saveBtn.disabled = false;
+      saveBtn.textContent = 'Save Configurations';
+    });
+  });
+
+  // ── Add Guest Form Submission ─────────────────────────────────────────────
+  document.getElementById('add-guest-form').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const name = document.getElementById('add-guest-name').value.trim();
+    const email = document.getElementById('add-guest-email').value.trim();
+    const phone = document.getElementById('add-guest-phone').value.trim();
+    const reg_no = document.getElementById('add-guest-reg').value.trim();
+    const submitBtn = document.getElementById('add-guest-submit');
+
+    // Collect dynamic custom fields
+    const custom_fields = {};
+    document.querySelectorAll('.dynamic-field-input').forEach(input => {
+      custom_fields[input.dataset.col] = input.value.trim();
+    });
+
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Registering...';
+
+    fetch('/add_attendee', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, email, phone, reg_no, custom_fields })
+    })
+    .then(r => {
+      if (!r.ok) return r.json().then(err => { throw new Error(err.message || 'Error adding attendee'); });
+      return r.json();
+    })
+    .then(data => {
+      showDashboardToast(name, `✅ Successfully registered: ${reg_no}`, 'ok');
+      document.getElementById('add-guest-form').reset();
+      // Clear dynamic fields
+      document.querySelectorAll('.dynamic-field-input').forEach(input => input.value = '');
+    })
+    .catch(err => {
+      showDashboardToast('Registration Failed', err.message, 'err');
+    })
+    .finally(() => {
+      submitBtn.disabled = false;
+      submitBtn.textContent = 'Register Guest & Generate QR';
+    });
+  });
+
+  // ── Load Dynamic Guest Form Fields ─────────────────────────────────────────
+  function loadDynamicGuestFields() {
+    const container = document.getElementById('dynamic-guest-fields');
+    if (!container) return;
+    container.innerHTML = '';
+
+    fetch('/active_event_columns')
+      .then(r => r.json())
+      .then(data => {
+        if (data.columns && data.columns.length > 0) {
+          data.columns.forEach(col => {
+            const div = document.createElement('div');
+            div.className = 'form-group';
+            div.innerHTML = `
+              <label class="form-label">${escapeHtml(col)}</label>
+              <input type="text" class="form-input dynamic-field-input" data-col="${escapeHtml(col)}" placeholder="Enter ${escapeHtml(col)}" />
+            `;
+            container.appendChild(div);
+          });
+        }
+      })
+      .catch(err => console.error('Error loading columns:', err));
+  }
+
+  // ── Event Explorer Tree & switching ───────────────────────────────────────
+  let activeEventName = "Default Event";
+
+  function refreshEventTree() {
+    fetch('/events')
+      .then(r => r.json())
+      .then(data => {
+        activeEventName = data.active;
+        document.getElementById('active-event-display').textContent = activeEventName;
+        
+        const root = document.getElementById('event-tree-root');
+        root.innerHTML = '';
+        
+        if (data.events && data.events.length > 0) {
+          data.events.forEach(evt => {
+            const li = document.createElement('li');
+            li.className = 'event-tree-item';
+            
+            const isMainActive = activeEventName === evt.name;
+            
+            li.innerHTML = `
+              <div class="event-tree-node ${isMainActive ? 'active-node' : ''}" data-name="${escapeHtml(evt.name)}">
+                <span class="event-tree-node-name">📁 ${escapeHtml(evt.name)}</span>
+                <button class="view-qr-btn btn-add-sub-tree" data-parent="${escapeHtml(evt.name)}" style="padding: 2px 6px; font-size: 0.65rem; margin: 0;">+ Sub</button>
+              </div>
+            `;
+            
+            // Nested list for sub-events
+            if (evt.sub_events && evt.sub_events.length > 0) {
+              const subUl = document.createElement('ul');
+              subUl.style.listStyleType = 'none';
+              subUl.style.paddingLeft = '12px';
+              
+              evt.sub_events.forEach(sub => {
+                const subLi = document.createElement('li');
+                subLi.className = 'event-tree-item';
+                
+                const fullSubName = `${evt.name}/${sub}`;
+                const isSubActive = activeEventName === fullSubName;
+                
+                subLi.innerHTML = `
+                  <div class="event-tree-node ${isSubActive ? 'active-node' : ''}" data-name="${escapeHtml(fullSubName)}">
+                    <span class="event-tree-node-name">└── 📄 ${escapeHtml(sub)}</span>
+                  </div>
+                `;
+                subUl.appendChild(subLi);
+              });
+              li.appendChild(subUl);
+            }
+            root.appendChild(li);
+          });
+        } else {
+          root.innerHTML = '<li>No events found.</li>';
+        }
+        
+        // Bind events to nodes
+        document.querySelectorAll('.event-tree-node').forEach(node => {
+          node.addEventListener('click', (e) => {
+            if (e.target.classList.contains('btn-add-sub-tree')) return; // ignore sub button clicks
+            const name = node.dataset.name;
+            selectEvent(name);
+          });
+        });
+        
+        // Bind sub-event create buttons
+        document.querySelectorAll('.btn-add-sub-tree').forEach(btn => {
+          btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const parent = btn.dataset.parent;
+            const subName = prompt(`Enter sub-event name for "${parent}":`);
+            if (subName && subName.trim()) {
+              createEvent(subName.trim(), parent);
+            }
+          });
+        });
+      })
+      .catch(err => console.error('Error refreshing tree:', err));
+  }
+
+  function selectEvent(name) {
+    fetch('/select_event', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: name })
+    })
+    .then(r => r.json())
+    .then(data => {
+      showDashboardToast('Event Switched', data.message, 'ok');
+      refreshEventTree();
+      loadDynamicGuestFields();
+    })
+    .catch(err => console.error('Error switching event:', err));
+  }
+
+  function createEvent(name, parent = '') {
+    fetch('/create_event', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: name, parent: parent })
+    })
+    .then(r => {
+      if (!r.ok) return r.json().then(e => { throw new Error(e.message || 'Failed to create event'); });
+      return r.json();
+    })
+    .then(data => {
+      showDashboardToast('Event Created', data.message, 'ok');
+      refreshEventTree();
+      if (!parent) {
+        // Automatically switch to the newly created main event
+        selectEvent(data.name);
+      }
+    })
+    .catch(err => showDashboardToast('Error Creating Event', err.message, 'err'));
+  }
+
+  document.getElementById('btn-create-event').addEventListener('click', () => {
+    const name = prompt('Enter folder name for new Main Event:');
+    if (name && name.trim()) {
+      createEvent(name.trim());
+    }
+  });
+
+  document.getElementById('btn-create-subevent').addEventListener('click', () => {
+    const parent = prompt('Enter parent Main Event folder name:');
+    if (!parent || !parent.trim()) return;
+    const name = prompt(`Enter sub-event folder name to create inside "${parent}":`);
+    if (name && name.trim()) {
+      createEvent(name.trim(), parent.trim());
+    }
+  });
+
+  // Load Tree and Dynamic Fields on Startup
+  refreshEventTree();
+  loadDynamicGuestFields();
+
+  // ── Public Tunneling Logic ─────────────────────────────────────────────────
+  const btnToggleTunnel = document.getElementById('btn-toggle-tunnel');
+  const tunnelStatusBadge = document.getElementById('tunnel-status-badge');
+  const tunnelUrlContainer = document.getElementById('tunnel-url-container');
+  const tunnelPublicUrl = document.getElementById('tunnel-public-url');
+  const tunnelQrImg = document.getElementById('tunnel-qr-img');
+  let isTunnelActive = false;
+
+  function updateTunnelUI(data) {
+    isTunnelActive = data.active;
+    if (isTunnelActive) {
+      tunnelStatusBadge.textContent = 'Active';
+      tunnelStatusBadge.className = 'badge-status scanned';
+      btnToggleTunnel.textContent = 'Stop Public Tunnel';
+      btnToggleTunnel.style.background = 'rgba(255, 50, 50, 0.08)';
+      btnToggleTunnel.style.color = '#ff6b6b';
+      btnToggleTunnel.style.borderColor = 'rgba(255, 50, 50, 0.3)';
+      
+      if (data.url && data.url !== 'Connecting...') {
+        tunnelUrlContainer.style.display = 'block';
+        tunnelPublicUrl.textContent = data.url;
+        tunnelPublicUrl.href = data.url;
+        tunnelQrImg.src = `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(data.url)}`;
+      } else {
+        tunnelUrlContainer.style.display = 'block';
+        tunnelPublicUrl.textContent = 'Setting up tunnel...';
+        tunnelPublicUrl.removeAttribute('href');
+        tunnelQrImg.src = '';
+      }
+    } else {
+      tunnelStatusBadge.textContent = 'Inactive';
+      tunnelStatusBadge.className = 'badge-status not-scanned';
+      btnToggleTunnel.textContent = 'Start Public Tunnel';
+      btnToggleTunnel.style.background = 'rgba(0, 245, 160, 0.08)';
+      btnToggleTunnel.style.color = 'var(--accent)';
+      btnToggleTunnel.style.borderColor = 'rgba(0, 245, 160, 0.3)';
+      tunnelUrlContainer.style.display = 'none';
+      tunnelPublicUrl.removeAttribute('href');
+      tunnelQrImg.src = '';
+    }
+  }
+
+  // Poll status once on load
+  fetch('/tunnel_status')
+    .then(r => r.json())
+    .then(updateTunnelUI)
+    .catch(() => {});
+
+  btnToggleTunnel.addEventListener('click', () => {
+    btnToggleTunnel.disabled = true;
+    btnToggleTunnel.textContent = isTunnelActive ? 'Stopping...' : 'Starting...';
+    
+    const endpoint = isTunnelActive ? '/stop_tunnel' : '/start_tunnel';
+    fetch(endpoint, { method: 'POST' })
+      .then(r => r.json())
+      .then(data => {
+        showDashboardToast('Tunnel Triggered', data.message, 'ok');
+        // Let socket trigger update UI
+      })
+      .catch(err => {
+        showDashboardToast('Tunnel Error', err.message, 'err');
+      })
+      .finally(() => {
+        btnToggleTunnel.disabled = false;
+      });
+  });
+
+  // ── CSV/Excel Import Preview wizard OVERRIDE ───────────────────────────────
+  let currentPreviewRecords = [];
+  let currentImportMode = 'append';
+
+  function openPreviewModal(records, mode) {
+    currentPreviewRecords = records;
+    currentImportMode = mode;
+
+    const tbody = document.getElementById('preview-table-body');
+    if (!tbody) return;
+    tbody.innerHTML = '';
+
+    let total = records.length;
+    let ok = 0;
+    let dups = 0;
+    let invalid = 0;
+
+    records.forEach(row => {
+      let statusClass = 'ok';
+      let statusText = 'OK';
+      
+      if (row.status === 'ok') {
+        ok++;
+      } else if (row.status.startsWith('dup_')) {
+        dups++;
+        if (row.status === 'dup_file_reg' || row.status === 'dup_db_reg') {
+          statusClass = row.status === 'dup_file_reg' ? 'file-dup-reg' : 'db-dup-reg';
+          statusText = row.status === 'dup_file_reg' ? 'Dup File Reg' : 'Dup DB Reg';
+        } else {
+          statusClass = row.status === 'dup_file_email' ? 'file-dup-email' : 'db-dup-email';
+          statusText = row.status === 'dup_file_email' ? 'Dup File Email' : 'Dup DB Email';
+        }
+      } else if (row.status === 'missing') {
+        invalid++;
+        statusClass = 'missing';
+        statusText = 'Missing info';
+      }
+
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${escapeHtml(row.name)}</td>
+        <td>${escapeHtml(row.email)}</td>
+        <td>${escapeHtml(row.phone || '')}</td>
+        <td>${escapeHtml(row.reg_no)}</td>
+        <td><span class="preview-status-badge ${statusClass}">${statusText}</span></td>
+        <td style="color:var(--muted); font-size:0.7rem;">${escapeHtml(row.issue || '')}</td>
+      `;
+      tbody.appendChild(tr);
+    });
+
+    document.getElementById('preview-total-count').textContent = total;
+    document.getElementById('preview-ok-count').textContent = ok;
+    document.getElementById('preview-dup-count').textContent = dups;
+    document.getElementById('preview-invalid-count').textContent = invalid;
+
+    const modal = document.getElementById('preview-modal');
+    if (modal) modal.classList.add('active');
+  }
+
+  function closePreviewModal() {
+    const modal = document.getElementById('preview-modal');
+    if (modal) modal.classList.remove('active');
+  }
+
+  document.getElementById('preview-modal-close').addEventListener('click', closePreviewModal);
+  document.getElementById('preview-cancel-btn').addEventListener('click', closePreviewModal);
+
+  document.getElementById('preview-confirm-btn').addEventListener('click', () => {
+    const skipDup = document.getElementById('preview-opt-skipdup').checked;
+    const skipInvalid = document.getElementById('preview-opt-skipinvalid').checked;
+    const autoResolve = document.getElementById('preview-opt-autoresolve').checked;
+
+    let filteredRows = currentPreviewRecords.filter(row => {
+      if (skipInvalid && row.status === 'missing') return false;
+      if (skipDup && row.status.startsWith('dup_')) return false;
+      return true;
+    });
+
+    if (filteredRows.length === 0) {
+      alert('No valid rows to import based on your filter selections.');
+      return;
+    }
+
+    const confirmBtn = document.getElementById('preview-confirm-btn');
+    confirmBtn.disabled = true;
+    confirmBtn.textContent = 'Importing...';
+
+    fetch('/confirm_import', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        rows: filteredRows,
+        mode: currentImportMode,
+        auto_resolve: autoResolve
+      })
+    })
+    .then(r => {
+      if (!r.ok) return r.json().then(err => { throw new Error(err.message || 'Import failed'); });
+      return r.json();
+    })
+    .then(data => {
+      showDashboardToast('Import Success', data.message, 'ok');
+      closePreviewModal();
+      document.getElementById('import-csv-form').reset();
+    })
+    .catch(err => {
+      showDashboardToast('Import Failed', err.message, 'err');
+    })
+    .finally(() => {
+      confirmBtn.disabled = false;
+      confirmBtn.textContent = 'Confirm & Import';
+    });
+  });
+
+  document.getElementById('import-csv-form').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const fileInput = document.getElementById('import-csv-file');
+    const resetCheckbox = document.getElementById('import-csv-reset');
+    const submitBtn = document.getElementById('import-csv-submit');
+
+    if (!fileInput.files.length) return;
+
+    const destType = document.querySelector('input[name="import-dest-type"]:checked').value;
+    const newEventName = importNewEventNameInput.value.trim();
+
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Analyzing file...';
+
+    const mode = resetCheckbox.checked ? 'reset' : 'append';
+
+    // Helper function to proceed with previewing
+    function proceedWithPreview() {
+      const formData = new FormData();
+      formData.append('file', fileInput.files[0]);
+
+      fetch('/preview_import', {
+        method: 'POST',
+        body: formData
+      })
+      .then(r => {
+        if (!r.ok) return r.json().then(err => { throw new Error(err.message || 'Error validating file'); });
+        return r.json();
+      })
+      .then(data => {
+        openPreviewModal(data, mode);
+      })
+      .catch(err => {
+        showDashboardToast('Validation Failed', err.message, 'err');
+      })
+      .finally(() => {
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Upload & Preview Registry';
+      });
+    }
+
+    if (destType === 'new') {
+      if (!newEventName) {
+        alert('Please specify a name for the new event.');
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Upload & Preview Registry';
+        return;
+      }
+      // 1. Create the new event
+      fetch('/create_event', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: newEventName })
+      })
+      .then(r => {
+        if (!r.ok) return r.json().then(e => { throw new Error(e.message || 'Failed to create new event folder'); });
+        return r.json();
+      })
+      .then(createData => {
+        // 2. Select it as active
+        return fetch('/select_event', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: createData.name })
+        });
+      })
+      .then(r => r.json())
+      .then(selectData => {
+        refreshEventTree();
+        loadDynamicGuestFields();
+        // 3. Process the file
+        proceedWithPreview();
+      })
+      .catch(err => {
+        showDashboardToast('Error Creating Event', err.message, 'err');
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Upload & Preview Registry';
+      });
+    } else {
+      proceedWithPreview();
+    }
+  });
+
+  // ── Bulk Email Campaign Logic ─────────────────────────────────────────────
+  const progressArea = document.getElementById('email-progress-area');
+  const progressBarFill = document.getElementById('email-progress-bar');
+  const progressStatus = document.getElementById('email-progress-status');
+  const progressCount = document.getElementById('email-progress-count');
+  const logConsole = document.getElementById('email-log-console');
+  const emailSubmitBtn = document.getElementById('send-emails-submit');
+
+  function updateEmailProgress(data) {
+    if (data.active || data.total > 0) {
+      progressArea.style.display = 'block';
+    } else {
+      progressArea.style.display = 'none';
+      return;
+    }
+
+    const total = data.total || 0;
+    const processed = (data.sent || 0) + (data.skipped || 0) + (data.failed || 0);
+    const pct = total > 0 ? Math.min(100, Math.round((processed / total) * 100)) : 0;
+    
+    progressBarFill.style.width = `${pct}%`;
+    progressStatus.textContent = data.current_status || 'Running...';
+    progressCount.textContent = `${processed}/${total}`;
+    
+    if (data.logs && data.logs.length) {
+      logConsole.textContent = data.logs.join('\n');
+      logConsole.scrollTop = logConsole.scrollHeight;
+    }
+
+    if (data.active) {
+      emailSubmitBtn.disabled = true;
+      emailSubmitBtn.textContent = 'Campaign In Progress...';
+    } else {
+      emailSubmitBtn.disabled = false;
+      emailSubmitBtn.textContent = 'Start Bulk Email Campaign';
+    }
+  }
+
+  // Load initial status on dashboard load
+  fetch('/email_status')
+    .then(r => r.json())
+    .then(updateEmailProgress)
+    .catch(() => {});
+
+  document.getElementById('send-emails-form').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const sender_email = document.getElementById('email-sender').value.trim();
+    const app_password = document.getElementById('email-password').value.trim();
+    const subject = document.getElementById('email-subject').value.trim();
+    const event_name = document.getElementById('email-event').value.trim();
+
+    emailSubmitBtn.disabled = true;
+    emailSubmitBtn.textContent = 'Starting...';
+
+    fetch('/send_emails', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sender_email, app_password, subject, event_name })
+    })
+    .then(r => {
+      if (!r.ok) return r.json().then(err => { throw new Error(err.message || 'Error starting emailer'); });
+      return r.json();
+    })
+    .then(data => {
+      showDashboardToast('Campaign Started', data.message, 'ok');
+      fetch('/email_status')
+        .then(r => r.json())
+        .then(updateEmailProgress);
+    })
+    .catch(err => {
+      showDashboardToast('Campaign Failed', err.message, 'err');
+      emailSubmitBtn.disabled = false;
+      emailSubmitBtn.textContent = 'Start Bulk Email Campaign';
+    });
+  });
+
+  // ── Bulk WhatsApp Campaign Logic ──────────────────────────────────────────
+  const waProgressArea = document.getElementById('whatsapp-progress-area');
+  const waProgressBarFill = document.getElementById('whatsapp-progress-bar');
+  const waProgressStatus = document.getElementById('whatsapp-progress-status');
+  const waProgressCount = document.getElementById('whatsapp-progress-count');
+  const waLogConsole = document.getElementById('whatsapp-log-console');
+  const waSubmitBtn = document.getElementById('send-whatsapp-submit');
+
+  function updateWhatsappProgress(data) {
+    if (data.active || data.total > 0) {
+      waProgressArea.style.display = 'block';
+    } else {
+      waProgressArea.style.display = 'none';
+      return;
+    }
+
+    const total = data.total || 0;
+    const processed = (data.sent || 0) + (data.skipped || 0) + (data.failed || 0);
+    const pct = total > 0 ? Math.min(100, Math.round((processed / total) * 100)) : 0;
+    
+    waProgressBarFill.style.width = `${pct}%`;
+    waProgressStatus.textContent = data.current_status || 'Running...';
+    waProgressCount.textContent = `${processed}/${total}`;
+    
+    if (data.logs && data.logs.length) {
+      waLogConsole.textContent = data.logs.join('\n');
+      waLogConsole.scrollTop = waLogConsole.scrollHeight;
+    }
+
+    if (data.active) {
+      waSubmitBtn.disabled = true;
+      waSubmitBtn.textContent = 'Campaign In Progress...';
+    } else {
+      waSubmitBtn.disabled = false;
+      waSubmitBtn.textContent = 'Start Bulk WhatsApp Campaign';
+    }
+  }
+
+  // Load initial status on dashboard load
+  fetch('/whatsapp_status')
+    .then(r => r.json())
+    .then(updateWhatsappProgress)
+    .catch(() => {});
+
+  document.getElementById('send-whatsapp-form').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const twilio_sid = document.getElementById('wa-sid').value.trim();
+    const twilio_token = document.getElementById('wa-token').value.trim();
+    const twilio_sender = document.getElementById('wa-sender').value.trim();
+    const event_name = document.getElementById('wa-event').value.trim();
+
+    waSubmitBtn.disabled = true;
+    waSubmitBtn.textContent = 'Starting...';
+
+    fetch('/send_whatsapp_bulk', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ twilio_sid, twilio_token, twilio_sender, event_name })
+    })
+    .then(r => {
+      if (!r.ok) return r.json().then(err => { throw new Error(err.message || 'Error starting WhatsApp campaign'); });
+      return r.json();
+    })
+    .then(data => {
+      showDashboardToast('Campaign Started', data.message, 'ok');
+      fetch('/whatsapp_status')
+        .then(r => r.json())
+        .then(updateWhatsappProgress);
+    })
+    .catch(err => {
+      showDashboardToast('Campaign Failed', err.message, 'err');
+      waSubmitBtn.disabled = false;
+      waSubmitBtn.textContent = 'Start Bulk WhatsApp Campaign';
+    });
+  });
+
+  // ── Clock ──────────────────────────────────────────────────────────────────
+  function updateClock() {
+    const now  = new Date();
+    document.getElementById('live-date').textContent = now.toLocaleDateString('en-IN', { weekday:'short', day:'numeric', month:'short', year:'numeric' });
+    document.getElementById('live-time').textContent = now.toLocaleTimeString('en-IN', { hour:'2-digit', minute:'2-digit', second:'2-digit' });
+  }
+  updateClock(); setInterval(updateClock, 1000);
+
+  // ── Network info ──────────────────────────────────────────────────────────
+  fetch('/network_info')
+    .then(r => r.json())
+    .then(d => {
+      document.getElementById('network-url').textContent = d.url + '  (same Wi-Fi only)';
+    })
+    .catch(() => {
+      document.getElementById('network-url').textContent = 'Could not resolve LAN IP';
+    });
+
+  // ── Dashboard Toast (Floating Card Bottom-Right, Quiet/No Sound) ───────────
+  function showDashboardToast(name, subtext, type) {
+    const container = document.getElementById('dashboard-toast-container');
+    if (!container) return;
+    
+    const toast = document.createElement('div');
+    toast.className = `dash-toast ${type}`;
+    
+    const icons = { ok: '✅', warn: '⚠️', err: '❌' };
+    const icon = icons[type] || '🔔';
+    
+    toast.innerHTML = `
+      <span style="font-size: 1.15rem; flex-shrink: 0;">${icon}</span>
+      <div style="flex: 1;">
+        <div style="font-weight: 800; font-size: 0.85rem;">${escapeHtml(name)}</div>
+        <div style="font-size: 0.72rem; color: var(--muted); margin-top: 1px;">${escapeHtml(subtext)}</div>
+      </div>
+    `;
+    
+    container.appendChild(toast);
+    
+    // Auto remove toast after 5 seconds
+    setTimeout(() => {
+      toast.classList.add('fade-out');
+      setTimeout(() => toast.remove(), 400);
+    }, 4600);
+  }
+
+  // ── Stats ─────────────────────────────────────────────────────────────────
+  function updateStats(d) {
+    const animate = (id, cardId, val) => {
+      const el = document.getElementById(id);
+      const card = document.getElementById(cardId);
+      if (el.textContent !== String(val)) {
+        el.textContent = val;
+        card.classList.remove('bump');
+        void card.offsetWidth; // reflow to restart animation
+        card.classList.add('bump');
+        setTimeout(() => card.classList.remove('bump'), 400);
+      }
+    };
+    animate('stat-total',  'card-total',  d.total);
+    animate('stat-unique', 'card-unique', d.unique);
+    animate('stat-dup',    'card-dup',    d.duplicate);
+  }
+
+  fetch('/stats').then(r => r.json()).then(updateStats).catch(() => {});
+
+  // ── Attendee Card ─────────────────────────────────────────────────────────
+  function showAttendee(details, isDup, source) {
+    const card = document.getElementById('attendee-card');
+    document.getElementById('att-empty').style.display = 'none';
+    card.className = `attendee-card visible${isDup ? ' dup' : ''}`;
+    card.style.display = 'block';
+    document.getElementById('att-name').textContent   = details.Name || '—';
+    document.getElementById('att-email').textContent  = details.Email || '—';
+    document.getElementById('att-reg').textContent    = details['Registration Number'] || '—';
+    document.getElementById('att-status').textContent = details.Status || '—';
+    const srcEl = document.getElementById('att-source');
+    srcEl.textContent = source ? `Scanned via ${source}` : '';
+  }
+
+  // ── DataTable: Live Scan Log ──────────────────────────────────────────────
+  const csvTable = $('#csv-table').DataTable({
+    ajax: { 
+      url: '/data_csv', 
+      dataSrc: function(json) {
+        const select = document.getElementById('filter-log-device');
+        if (select) {
+          const currentVal = select.value;
+          const devices = new Set();
+          json.forEach(row => {
+            if (row['Last Device']) {
+              devices.add(row['Last Device']);
+            }
+          });
+          select.innerHTML = '<option value="">All Devices</option>';
+          Array.from(devices).sort().forEach(d => {
+            const opt = document.createElement('option');
+            opt.value = d;
+            opt.textContent = d;
+            if (d === currentVal) opt.selected = true;
+            select.appendChild(opt);
+          });
+        }
+        return json;
+      }
+    },
+    columns: [
+      {
+        data: 'QR Data',
+        render: d => `<span title="${d}">${d.length > 40 ? d.slice(0,40)+'…' : d}</span>`
+      },
+      {
+        data: 'Scan Count',
+        render: n => `<span class="badge-count${n > 1 ? ' multi' : ''}">${n}</span>`
+      },
+      { data: 'Last Timestamp' },
+      {
+        data: 'Last Device',
+        render: d => d ? `<span style="color: var(--accent2); font-weight: 600;">${escapeHtml(d)}</span>` : '<span style="color: var(--muted);">—</span>'
+      },
+      {
+        data: 'Timestamps',
+        render: d => {
+          const parts = (d || '').split(';').filter(Boolean);
+          return parts.length > 1 ? `${parts.length} scans` : (parts[0] || '—');
+        }
+      }
+    ],
+    order: [[2, 'desc']],
+    pageLength: 10,
+    language: {
+      search: '',
+      searchPlaceholder: 'Search log…',
+      lengthMenu: 'Show _MENU_',
+      info: '_START_–_END_ of _TOTAL_',
+    }
+  });
+
+  // ── DataTable: Attendee Registry ──────────────────────────────────────────
+  const registryTable = $('#registry-table').DataTable({
+    ajax: { url: '/registry', dataSrc: '' },
+    columns: [
+      { data: 'name' },
+      { data: 'email' },
+      {
+        data: 'phone',
+        render: d => d ? `<span style="font-family:var(--mono);">${escapeHtml(d)}</span>` : `<span style="color:var(--muted);">—</span>`
+      },
+      { data: 'reg_no' },
+      { 
+        data: 'status',
+        render: d => {
+          const isScanned = d && d.toLowerCase().startsWith('scanned');
+          return `<span class="badge-status ${isScanned ? 'scanned' : 'not-scanned'}">${d}</span>`;
+        }
+      },
+      {
+        data: null,
+        orderable: false,
+        render: (data, type, row) => {
+          const isScanned = row.status && row.status.toLowerCase().startsWith('scanned');
+          const qrEscaped = btoa(unescape(encodeURIComponent(row.qr)));
+          const viewQrBtn = `<button class="view-qr-btn" data-reg="${escapeHtml(row.reg_no)}" data-name="${escapeHtml(row.name)}">View QR</button>`;
+          
+          let whatsappBtn = '';
+          if (row.phone) {
+            const cleanPhone = row.phone.replace(/[^\d+]/g, '');
+            const message = `Hi ${row.name},\n\nHere is your QR Code for the event. Present it at the entrance.\n\nRegistration No: ${row.reg_no}\n\nDownload link: ${window.location.origin}/qrcodes/${encodeURIComponent(row.reg_no)}.png`;
+            const waUrl = `https://api.whatsapp.com/send?phone=${encodeURIComponent(cleanPhone)}&text=${encodeURIComponent(message)}`;
+            whatsappBtn = `<a href="${waUrl}" target="_blank" class="view-qr-btn" style="background: rgba(0,245,160,0.08); color: var(--accent); border-color: rgba(0,245,160,0.3); text-decoration: none; display: inline-block; padding: 4px 10px; line-height: 1.2;">Send WA</a>`;
+          }
+          
+          if (isScanned) {
+            return `<span style="color: var(--accent); font-size: 0.78rem; font-weight:700; margin-right:6px;">✓ Checked In</span> ${viewQrBtn} ${whatsappBtn}`;
+          }
+          return `<button class="manual-checkin-btn" data-qr-b64="${qrEscaped}">Check In</button> ${viewQrBtn} ${whatsappBtn}`;
+        }
+      }
+    ],
+    pageLength: 10,
+    language: {
+      search: '',
+      searchPlaceholder: 'Search registry…',
+      lengthMenu: 'Show _MENU_',
+      info: '_START_–_END_ of _TOTAL_',
+    }
+  });
+
+  // ── Advanced DataTables Filtering ──────────────────────────────────────────
+  $.fn.dataTable.ext.search.push(
+    function(settings, data, dataIndex) {
+      const tableId = settings.nTable.id;
+      
+      // 1) Live Scan Log filtering
+      if (tableId === 'csv-table') {
+        const deviceFilter = document.getElementById('filter-log-device').value;
+        const typeFilter = document.getElementById('filter-log-type').value;
+        const timeFilter = document.getElementById('filter-log-time').value;
+        
+        const rowData = csvTable.row(dataIndex).data();
+        if (!rowData) return true;
+        
+        // Filter by Device (match against Last Device)
+        if (deviceFilter && rowData['Last Device'] !== deviceFilter) {
+          return false;
+        }
+        
+        // Filter by Type (Unique vs. Duplicate)
+        if (typeFilter === 'unique' && parseInt(rowData['Scan Count']) > 1) {
+          return false;
+        } else if (typeFilter === 'duplicate' && parseInt(rowData['Scan Count']) <= 1) {
+          return false;
+        }
+        
+        // Filter by Time
+        if (timeFilter) {
+          const lastTsStr = rowData['Last Timestamp'];
+          if (!lastTsStr) return false;
+          
+          const parts = lastTsStr.split(/[- :]/);
+          const lastTsDate = new Date(parts[0], parts[1]-1, parts[2], parts[3], parts[4], parts[5]);
+          const now = new Date();
+          const diffMins = (now - lastTsDate) / (1000 * 60);
+          
+          if (diffMins > parseInt(timeFilter)) {
+            return false;
+          }
+        }
+        
+        return true;
+      }
+      
+      // 2) Registry filtering
+      if (tableId === 'registry-table') {
+        const statusFilter = document.getElementById('filter-reg-status').value;
+        const rowData = registryTable.row(dataIndex).data();
+        if (!rowData) return true;
+        
+        const isScanned = rowData.status && rowData.status.toLowerCase().startsWith('scanned');
+        
+        if (statusFilter === 'scanned' && !isScanned) {
+          return false;
+        }
+        if (statusFilter === 'not-scanned' && isScanned) {
+          return false;
+        }
+        
+        return true;
+      }
+      
+      return true;
+    }
+  );
+
+  // Trigger redraw on filter changes
+  document.getElementById('filter-log-device').addEventListener('change', () => csvTable.draw());
+  document.getElementById('filter-log-type').addEventListener('change', () => csvTable.draw());
+  document.getElementById('filter-log-time').addEventListener('change', () => csvTable.draw());
+  document.getElementById('filter-reg-status').addEventListener('change', () => registryTable.draw());
+  
+  document.getElementById('reset-log-filters').addEventListener('click', () => {
+    document.getElementById('filter-log-device').value = "";
+    document.getElementById('filter-log-type').value = "";
+    document.getElementById('filter-log-time').value = "";
+    csvTable.draw();
+  });
+
+  // Handle Manual Check-in Click
+  $('#registry-table').on('click', '.manual-checkin-btn', function() {
+    const btn = $(this);
+    const b64 = btn.attr('data-qr-b64');
+    const qrData = decodeURIComponent(escape(atob(b64)));
+    
+    btn.prop('disabled', true).text('Checking...');
+    
+    fetch('/manual_checkin', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ qr_data: qrData, device_id: deviceId })
+    })
+    .then(r => {
+      if (!r.ok) return r.json().then(e => { throw new Error(e.message || 'Check-in failed'); });
+      return r.json();
+    })
+    .then(data => {
+      btn.prop('disabled', false).text('Check In');
+    })
+    .catch(e => {
+      btn.prop('disabled', false).text('Check In');
+    });
+  });
+
+  // ── Socket.IO real-time events ────────────────────────────────────────────
+  const socket = io();
+
+  // Handle local name edits and sync
+  devNameInput.addEventListener('change', () => {
+    const newName = devNameInput.value.trim();
+    if (newName) {
+      deviceName = newName;
+      localStorage.setItem('device_name', newName);
+      socket.emit('rename_device', { device_id: deviceId, name: newName });
+    }
+  });
+
+  // Handle device renaming directly from manager card grid
+  window.editDeviceName = function(targetId, currentName) {
+    const newName = prompt(`Enter new name/label for scanner device "${currentName}":`);
+    if (newName && newName.trim()) {
+      socket.emit('rename_device', { device_id: targetId, name: newName.trim() });
+    }
+  };
+
+  // ── scan_alert: broadcast to ALL devices (dashboard is silent) ─
+  socket.on('scan_alert', data => {
+    const type = data.is_duplicate ? 'warn' : 'ok';
+    // QUIET bottom-right toast notification for manager dashboard (NO playBeep call!)
+    if (data.name) {
+      showDashboardToast(
+        data.name,
+        data.is_duplicate
+          ? `⚠️ Duplicate check-in at ${data.device_name || 'scanner'}`
+          : `✅ Checked in successfully at ${data.device_name || 'scanner'}`,
+        type
+      );
+    }
+    if (data.details && data.details.Name) {
+      showAttendee(data.details, data.is_duplicate, data.device_name || 'another device');
+    }
+  });
+
+  // ── tunnel_status_update: public link broadcast ───────────────────────────
+  socket.on('tunnel_status_update', data => {
+    updateTunnelUI(data);
+  });
+
+  // ── row_updated: live log + registry sync on ALL devices ──────────────────
+  socket.on('row_updated', row => {
+    clearTimeout(scanTimeoutId);
+
+    const rec = {
+      'QR Data':        row.qr_data,
+      'Scan Count':     row.scan_count,
+      'Last Timestamp': row.last_timestamp,
+      'Last Device':    row.last_device,
+      'Devices':        row.devices,
+      'Timestamps':     row.timestamps
+    };
+
+    let found = false;
+    csvTable.rows().every(function() {
+      if (this.data()['QR Data'] === row.qr_data) {
+        this.data(rec);
+        $(this.node()).addClass('new-row');
+        setTimeout(() => $(this.node()).removeClass('new-row'), 1600);
+        found = true;
+        return false;
+      }
+    });
+    if (!found) {
+      const newRow = csvTable.row.add(rec);
+      $(newRow.node()).addClass('new-row');
+      setTimeout(() => $(newRow.node()).removeClass('new-row'), 1600);
+    }
+    csvTable.order([[2, 'desc']]).draw(false);
+
+    // Sync registry table so status badges update
+    registryTable.ajax.reload(null, false);
+
+    // Re-enable camera scanner on this machine
+    processing = false;
+    scanner.start();
+    if (scanLine) scanLine.classList.add('active');
+    setStatus('Scanning…');
+  });
+
+  // ── registry_updated: reload guest list instantly ────────────────────────
+  socket.on('registry_updated', () => {
+    registryTable.ajax.reload(null, false);
+    csvTable.ajax.reload(null, false);
+    loadDynamicGuestFields();
+  });
+
+  // ── QR Code View Modal Logic ──────────────────────────────────────────────
+  const qrModal = document.getElementById('qr-modal');
+  const qrModalImg = document.getElementById('qr-modal-img');
+  const qrModalTitle = document.getElementById('qr-modal-title');
+  const qrModalSub = document.getElementById('qr-modal-sub');
+  const qrModalDownload = document.getElementById('qr-modal-download');
+  const qrModalClose = document.getElementById('qr-modal-close');
+
+  function openQrModal(reg_no, name) {
+    if (!qrModal || !qrModalImg || !qrModalTitle || !qrModalSub || !qrModalDownload) return;
+    const qrUrl = `/qrcodes/${encodeURIComponent(reg_no)}.png`;
+    qrModalImg.src = qrUrl;
+    qrModalTitle.textContent = `${name}`;
+    qrModalSub.textContent = `Registration: ${reg_no}`;
+    qrModalDownload.href = qrUrl;
+    qrModalDownload.download = `${reg_no}.png`;
+    
+    qrModal.classList.add('active');
+  }
+
+  function closeQrModal() {
+    if (qrModal) qrModal.classList.remove('active');
+  }
+
+  if (qrModalClose) qrModalClose.addEventListener('click', closeQrModal);
+  if (qrModal) {
+    qrModal.addEventListener('click', (e) => {
+      if (e.target === qrModal) closeQrModal();
+    });
+  }
+
+  // Listen to View QR button clicks inside registry DataTable
+  $('#registry-table').on('click', '.view-qr-btn', function() {
+    const btn = $(this);
+    const reg_no = btn.attr('data-reg');
+    const name = btn.attr('data-name');
+    openQrModal(reg_no, name);
+  });
+
+  // ── stats_updated: push stat cards to all devices instantly ───────────────
+  socket.on('stats_updated', updateStats);
+
+  // ── clients_count: show how many devices are online ───────────────────────
+  socket.on('clients_count', data => {
+    document.getElementById('devices-count').textContent = data.count;
+  });
+
+  // ── devices_updated: render card grid of all connected devices ─────────────
+  socket.on('devices_updated', devs => {
+    const grid = document.getElementById('devices-grid');
+    if (!grid) return;
+    grid.innerHTML = '';
+    
+    devs.forEach(d => {
+      const isLocal = d.id === deviceId;
+      const card = document.createElement('div');
+      card.className = `device-card ${d.online ? '' : 'offline'}`;
+      
+      card.innerHTML = `
+        <div class="device-card-header">
+          <div>
+            <div class="device-card-name" style="display:flex; align-items:center; gap:8px;">
+              <span>${escapeHtml(d.name)}</span>
+              <button onclick="editDeviceName('${d.id}', '${escapeHtml(d.name)}')" class="view-qr-btn" style="padding: 2px 6px; font-size: 0.62rem; margin:0;">Rename</button>
+              ${isLocal ? '<span style="font-size:0.72rem; color:var(--accent); font-weight:600;">(This)</span>' : ''}
+            </div>
+            <div class="device-card-ip">${escapeHtml(d.ip)}</div>
+          </div>
+          <span class="badge-status ${d.online ? 'scanned' : 'not-scanned'}">
+            ${d.online ? 'Online' : 'Offline'}
+          </span>
+        </div>
+        <div class="device-card-sys">System: <span style="color:var(--text); font-weight: 500;">${escapeHtml(d.user_agent)}</span></div>
+        <div class="device-card-stats">
+          <div>
+            <div class="device-stat-label">Scans Processed</div>
+            <div class="device-stat-val ${d.online ? '' : 'offline'}">${d.scans}</div>
+          </div>
+          <div style="text-align: right;">
+            <div class="device-stat-label">Last Activity</div>
+            <div class="device-activity" title="${escapeHtml(d.last_active_time)}">${escapeHtml(d.last_activity)}</div>
+          </div>
+        </div>
+      `;
+      grid.appendChild(card);
+    });
+  });
+
+  // ── Connection status ─────────────────────────────────────────────────────
+  socket.on('disconnect', () => {
+    document.getElementById('network-url').textContent = 'Reconnecting...';
+  });
+  socket.on('connect',    () => {
+    socket.emit('register_device', { device_id: deviceId, device_name: deviceName });
+  });
+</script>
+
+<!-- ── QR Code View Modal ── -->
+<div class="qr-modal" id="qr-modal">
+  <div class="qr-modal-content">
+    <button class="qr-modal-close" id="qr-modal-close">×</button>
+    <div class="qr-modal-title" id="qr-modal-title">Attendee QR Code</div>
+    <div class="qr-modal-sub" id="qr-modal-sub">Presenter at entrance</div>
+    <img src="" class="qr-modal-img" id="qr-modal-img" alt="QR Code" />
+    <div style="margin-top: 10px;">
+      <a href="" id="qr-modal-download" download class="download-btn excel-dl" style="padding: 6px 16px;">📥 Download QR</a>
+    </div>
+  </div>
+</div>
+
+<!-- ── Import Preview Modal ── -->
+<div class="preview-modal" id="preview-modal">
+  <div class="preview-modal-content">
+    <div class="preview-modal-header">
+      <div class="preview-modal-title">Spreadsheet Import Preview</div>
+      <button class="preview-modal-close" id="preview-modal-close">×</button>
+    </div>
+    
+    <div class="preview-modal-body">
+      <!-- Summary cards -->
+      <div class="preview-summary-cards">
+        <div class="preview-summary-card">
+          <div class="preview-summary-label">Total Rows</div>
+          <div class="preview-summary-val total" id="preview-total-count">0</div>
+        </div>
+        <div class="preview-summary-card">
+          <div class="preview-summary-label">OK to Import</div>
+          <div class="preview-summary-val ok" id="preview-ok-count">0</div>
+        </div>
+        <div class="preview-summary-card">
+          <div class="preview-summary-label">Duplicates</div>
+          <div class="preview-summary-val warning" id="preview-dup-count">0</div>
+        </div>
+        <div class="preview-summary-card">
+          <div class="preview-summary-label">Invalid/Missing</div>
+          <div class="preview-summary-val invalid" id="preview-invalid-count">0</div>
+        </div>
+      </div>
+      
+      <!-- Import Options -->
+      <div class="preview-options">
+        <span style="font-size:0.72rem; font-weight:700; text-transform:uppercase; color:var(--muted); margin-right:8px;">Import Settings:</span>
+        <label class="preview-option-item">
+          <input type="checkbox" id="preview-opt-autoresolve" checked />
+          <span>Auto-Resolve duplicate numbers (e.g. append -1)</span>
+        </label>
+        <label class="preview-option-item">
+          <input type="checkbox" id="preview-opt-skipdup" />
+          <span>Skip Duplicates (Reg No or Email)</span>
+        </label>
+        <label class="preview-option-item">
+          <input type="checkbox" id="preview-opt-skipinvalid" checked />
+          <span>Skip Invalid/Missing records</span>
+        </label>
+      </div>
+
+      <!-- Scrollable data table -->
+      <div style="border: 1px solid var(--border); border-radius: 8px; overflow: hidden; background: rgba(0,0,0,0.2); max-height: 250px; overflow-y: auto;">
+        <table class="preview-table" id="preview-table">
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Email</th>
+              <th>Phone</th>
+              <th>Reg Number</th>
+              <th>Status</th>
+              <th>Validation Issue</th>
+            </tr>
+          </thead>
+          <tbody id="preview-table-body">
+            <!-- Dynamically populated -->
+          </tbody>
+        </table>
+      </div>
+    </div>
+    
+    <div class="preview-modal-footer">
+      <button class="ops-btn" id="preview-cancel-btn" style="width: auto; background: transparent; color: var(--muted); border-color: var(--border); margin: 0; padding: 10px 20px;">Cancel</button>
+      <button class="ops-btn" id="preview-confirm-btn" style="width: auto; margin: 0; padding: 10px 24px;">Confirm & Import</button>
+    </div>
+  </div>
+<!-- Silent Toast Container -->
+<div id="dashboard-toast-container"></div>
+</body>
+</html>

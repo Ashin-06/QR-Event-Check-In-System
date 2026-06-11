@@ -1,0 +1,1653 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Event Check-In</title>
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/css/jquery.dataTables.min.css"/>
+  <style>
+    :root {
+      --bg:       #080c14;
+      --surface:  rgba(255,255,255,0.04);
+      --border:   rgba(255,255,255,0.10);
+      --accent:   #00f5a0;
+      --accent2:  #00b4d8;
+      --warn:     #ff6b35;
+      --text:     #e8edf5;
+      --muted:    #6b7a99;
+      --success-bg: rgba(0,245,160,0.10);
+      --warn-bg:    rgba(255,107,53,0.12);
+      --radius:   16px;
+      --font:     'Syne', sans-serif;
+      --mono:     'JetBrains Mono', monospace;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font);
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    /* ── Background mesh ──────────────────────────────── */
+    body::before {
+      content: '';
+      position: fixed; inset: 0; z-index: 0;
+      background:
+        radial-gradient(ellipse 60% 50% at 15% 20%, rgba(0,245,160,0.06) 0%, transparent 70%),
+        radial-gradient(ellipse 50% 40% at 85% 75%, rgba(0,180,216,0.06) 0%, transparent 70%);
+      pointer-events: none;
+    }
+
+    /* ── Global Scan Toast ───────────────────────────── */
+    #scan-toast {
+      position: fixed;
+      top: 20px; left: 50%; transform: translateX(-50%) translateY(-120px);
+      z-index: 9999;
+      min-width: 320px; max-width: 520px;
+      padding: 14px 20px;
+      border-radius: 14px;
+      font-family: var(--font);
+      font-size: 0.92rem;
+      font-weight: 700;
+      display: flex; align-items: center; gap: 12px;
+      backdrop-filter: blur(20px);
+      border: 1px solid rgba(255,255,255,0.15);
+      box-shadow: 0 8px 40px rgba(0,0,0,0.5);
+      transition: transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+      pointer-events: none;
+    }
+    #scan-toast.show { transform: translateX(-50%) translateY(0); }
+    #scan-toast.ok   { background: rgba(0,245,160,0.15); border-color: rgba(0,245,160,0.4); color: var(--accent); }
+    #scan-toast.warn { background: rgba(255,107,53,0.18); border-color: rgba(255,107,53,0.5); color: var(--warn); }
+    #scan-toast.err  { background: rgba(255,50,50,0.15); border-color: rgba(255,50,50,0.4); color: #ff6b6b; }
+    .toast-icon { font-size: 1.3rem; flex-shrink: 0; }
+    .toast-body { flex: 1; }
+    .toast-name { font-size: 1rem; font-weight: 800; }
+    .toast-sub  { font-size: 0.75rem; opacity: 0.75; margin-top: 2px; }
+
+    /* ── Layout ─────────────────────────────────────── */
+    .app {
+      position: relative; z-index: 1;
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 28px 24px 64px;
+    }
+
+    /* ── Network bar ─────────────────────────────────── */
+    .network-bar {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      margin-bottom: 20px;
+      padding: 10px 16px;
+      border-radius: 10px;
+      background: rgba(0,180,216,0.06);
+      border: 1px solid rgba(0,180,216,0.2);
+      font-size: 0.78rem;
+      flex-wrap: wrap;
+    }
+    .network-bar-label {
+      color: var(--muted);
+      font-weight: 600;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      flex-shrink: 0;
+    }
+    .network-url {
+      font-family: var(--mono);
+      color: var(--accent2);
+      font-weight: 500;
+      flex: 1;
+      word-break: break-all;
+    }
+    .devices-badge {
+      display: flex; align-items: center; gap: 6px;
+      padding: 4px 12px;
+      border-radius: 20px;
+      background: rgba(0,245,160,0.08);
+      border: 1px solid rgba(0,245,160,0.2);
+      color: var(--accent);
+      font-size: 0.75rem;
+      font-weight: 700;
+      flex-shrink: 0;
+      transition: all 0.3s ease;
+    }
+    .devices-dot {
+      width: 7px; height: 7px;
+      border-radius: 50%;
+      background: var(--accent);
+      animation: pulse-dot 2s ease infinite;
+    }
+    @keyframes pulse-dot {
+      0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(0,245,160,0.4); }
+      50%       { opacity: 0.7; box-shadow: 0 0 0 5px rgba(0,245,160,0); }
+    }
+
+    /* ── Header ─────────────────────────────────────── */
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 32px;
+      padding-bottom: 20px;
+      border-bottom: 1px solid var(--border);
+    }
+    .logo {
+      display: flex; align-items: center; gap: 12px;
+    }
+    .logo-icon {
+      width: 40px; height: 40px;
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      border-radius: 10px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 20px;
+    }
+    .logo-text {
+      font-size: 1.25rem; font-weight: 800;
+      letter-spacing: -0.02em;
+    }
+    .logo-text span { color: var(--accent); }
+
+    .header-time {
+      font-family: var(--mono);
+      font-size: 0.78rem;
+      color: var(--muted);
+      text-align: right;
+      line-height: 1.6;
+    }
+
+    /* ── Stats row ─────────────────────────────────── */
+    .stats-row {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 16px;
+      margin-bottom: 32px;
+    }
+    .stat-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 20px 24px;
+      backdrop-filter: blur(12px);
+      transition: border-color 0.2s, transform 0.15s;
+    }
+    .stat-card:hover { border-color: rgba(255,255,255,0.2); }
+    .stat-card.bump { animation: statBump 0.4s ease; }
+    @keyframes statBump {
+      0%   { transform: scale(1); }
+      40%  { transform: scale(1.04); }
+      100% { transform: scale(1); }
+    }
+    .stat-label {
+      font-size: 0.72rem; font-weight: 600; letter-spacing: 0.08em;
+      text-transform: uppercase; color: var(--muted); margin-bottom: 8px;
+    }
+    .stat-value {
+      font-size: 2rem; font-weight: 800; line-height: 1;
+      font-variant-numeric: tabular-nums;
+      font-family: var(--mono);
+    }
+    .stat-card.total  .stat-value { color: var(--text); }
+    .stat-card.unique .stat-value { color: var(--accent); }
+    .stat-card.dup    .stat-value { color: var(--warn); }
+
+    /* ── Main grid ─────────────────────────────────── */
+    .main-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 24px;
+      margin-bottom: 32px;
+    }
+    @media (max-width: 768px) {
+      .main-grid { grid-template-columns: 1fr; }
+      .stats-row  { grid-template-columns: 1fr; }
+    }
+
+    /* ── Panel ─────────────────────────────────────── */
+    .panel {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 28px;
+      backdrop-filter: blur(12px);
+    }
+    .panel-title {
+      font-size: 0.72rem; font-weight: 700; letter-spacing: 0.1em;
+      text-transform: uppercase; color: var(--muted);
+      margin-bottom: 20px;
+    }
+
+    /* ── Scanner ───────────────────────────────────── */
+    .scanner-wrap {
+      position: relative;
+      border-radius: 12px;
+      overflow: hidden;
+      background: #000;
+      aspect-ratio: 4/3;
+    }
+    #scanner {
+      width: 100%; height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+    .scan-overlay {
+      position: absolute; inset: 0; pointer-events: none;
+    }
+    .scan-corner {
+      position: absolute; width: 24px; height: 24px;
+      border-color: var(--accent);
+      border-style: solid;
+      opacity: 0.8;
+    }
+    .scan-corner.tl { top: 12px;    left: 12px;  border-width: 3px 0 0 3px; border-radius: 4px 0 0 0; }
+    .scan-corner.tr { top: 12px;    right: 12px; border-width: 3px 3px 0 0; border-radius: 0 4px 0 0; }
+    .scan-corner.bl { bottom: 12px; left: 12px;  border-width: 0 0 3px 3px; border-radius: 0 0 0 4px; }
+    .scan-corner.br { bottom: 12px; right: 12px; border-width: 0 3px 3px 0; border-radius: 0 0 4px 0; }
+
+    .scan-line {
+      position: absolute; left: 12px; right: 12px; height: 2px;
+      background: linear-gradient(90deg, transparent, var(--accent), transparent);
+      animation: scan 2.4s ease-in-out infinite;
+      opacity: 0;
+    }
+    .scan-line.active { opacity: 0.7; }
+    @keyframes scan {
+      0%   { top: 12px; }
+      100% { top: calc(100% - 12px); }
+    }
+
+    /* ── Status badge ──────────────────────────────── */
+    .status-box {
+      margin-top: 16px;
+      padding: 14px 18px;
+      border-radius: 10px;
+      font-size: 0.9rem;
+      font-weight: 600;
+      min-height: 52px;
+      display: flex; align-items: center; gap: 10px;
+      background: rgba(255,255,255,0.04);
+      border: 1px solid var(--border);
+      transition: all 0.3s ease;
+    }
+    .status-box.ok   { background: var(--success-bg); border-color: rgba(0,245,160,0.3); color: var(--accent); }
+    .status-box.warn { background: var(--warn-bg);    border-color: rgba(255,107,53,0.3); color: var(--warn); }
+    .status-box.err  { background: rgba(255,50,50,0.1); border-color: rgba(255,50,50,0.3); color: #ff6b6b; }
+    .status-dot {
+      width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
+    }
+    .ok   .status-dot { background: var(--accent); box-shadow: 0 0 8px var(--accent); }
+    .warn .status-dot { background: var(--warn);   box-shadow: 0 0 8px var(--warn); }
+    .err  .status-dot { background: #ff6b6b;       box-shadow: 0 0 8px #ff6b6b; }
+
+    .restart-btn {
+      margin-top: 14px;
+      width: 100%;
+      padding: 12px;
+      background: transparent;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      color: var(--text);
+      font-family: var(--font);
+      font-size: 0.88rem;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      cursor: pointer;
+      transition: background 0.2s, border-color 0.2s;
+    }
+    .restart-btn:hover {
+      background: rgba(255,255,255,0.06);
+      border-color: rgba(255,255,255,0.25);
+    }
+
+    /* ── Attendee card ─────────────────────────────── */
+    .attendee-card {
+      display: none;
+      margin-top: 20px;
+      padding: 18px 20px;
+      border-radius: 12px;
+      background: var(--success-bg);
+      border: 1px solid rgba(0,245,160,0.25);
+      animation: slideIn 0.3s ease;
+    }
+    .attendee-card.visible { display: block; }
+    .attendee-card.dup {
+      background: var(--warn-bg);
+      border-color: rgba(255,107,53,0.3);
+    }
+    @keyframes slideIn {
+      from { opacity: 0; transform: translateY(8px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    .attendee-name {
+      font-size: 1.1rem; font-weight: 700; margin-bottom: 6px;
+    }
+    .attendee-card:not(.dup) .attendee-name { color: var(--accent); }
+    .attendee-card.dup .attendee-name { color: var(--warn); }
+    .attendee-field {
+      font-size: 0.82rem; color: var(--muted);
+      font-family: var(--mono);
+      margin-top: 4px;
+    }
+    .attendee-field span { color: var(--text); }
+    .attendee-source {
+      margin-top: 10px;
+      font-size: 0.70rem;
+      color: var(--muted);
+      letter-spacing: 0.04em;
+      opacity: 0.7;
+    }
+
+    /* ── Log panel ─────────────────────────────────── */
+    .log-panel {
+      margin-bottom: 24px;
+    }
+
+    /* DataTable override */
+    .dataTables_wrapper { color: var(--text); }
+    table.dataTable { border-collapse: collapse !important; width: 100% !important; }
+    table.dataTable thead th {
+      background: rgba(255,255,255,0.05) !important;
+      color: var(--muted) !important;
+      font-family: var(--font) !important;
+      font-size: 0.72rem !important;
+      font-weight: 700 !important;
+      letter-spacing: 0.08em !important;
+      text-transform: uppercase !important;
+      border: none !important;
+      padding: 10px 12px !important;
+    }
+    table.dataTable tbody td {
+      background: transparent !important;
+      border-bottom: 1px solid var(--border) !important;
+      padding: 10px 12px !important;
+      font-size: 0.82rem !important;
+      font-family: var(--mono) !important;
+      color: var(--text) !important;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 200px;
+    }
+    table.dataTable tbody tr:hover td { background: rgba(255,255,255,0.03) !important; }
+    .dataTables_filter input,
+    .dataTables_length select {
+      background: rgba(255,255,255,0.05) !important;
+      border: 1px solid var(--border) !important;
+      border-radius: 8px !important;
+      color: var(--text) !important;
+      font-family: var(--font) !important;
+      padding: 6px 10px !important;
+    }
+    .dataTables_info, .dataTables_paginate { color: var(--muted) !important; font-size: 0.8rem !important; }
+    .paginate_button { color: var(--muted) !important; }
+    .paginate_button.current { background: rgba(0,245,160,0.15) !important; border-radius: 6px !important; color: var(--accent) !important; }
+    .badge-count {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 20px;
+      font-size: 0.75rem; font-weight: 700;
+      background: rgba(0,245,160,0.15);
+      color: var(--accent);
+    }
+    .badge-count.multi {
+      background: rgba(255,107,53,0.15);
+      color: var(--warn);
+    }
+
+    /* ── Pulse animation for new row ─────────────────── */
+    @keyframes rowPulse {
+      0%   { background: rgba(0,245,160,0.15) !important; }
+      100% { background: transparent !important; }
+    }
+    tr.new-row td { animation: rowPulse 1.5s ease forwards !important; }
+
+    /* ── Tabs Styling ───────────────────────────────── */
+    .tabs-container {
+      display: flex;
+      gap: 12px;
+      margin-bottom: 20px;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 8px;
+    }
+    .tab-btn {
+      background: transparent;
+      border: none;
+      color: var(--muted);
+      font-family: var(--font);
+      font-size: 0.88rem;
+      font-weight: 700;
+      padding: 8px 16px;
+      cursor: pointer;
+      border-radius: 8px;
+      transition: all 0.2s ease;
+    }
+    .tab-btn:hover {
+      color: var(--text);
+      background: rgba(255,255,255,0.02);
+    }
+    .tab-btn.active {
+      color: var(--accent);
+      background: rgba(0,245,160,0.08);
+    }
+    
+    .tab-content {
+      display: none;
+    }
+    .tab-content.active {
+      display: block;
+    }
+
+    /* ── Download buttons ───────────────────────────── */
+    .download-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 8px 14px;
+      border-radius: 8px;
+      font-size: 0.78rem;
+      font-weight: 700;
+      text-decoration: none;
+      font-family: var(--font);
+      letter-spacing: 0.02em;
+      transition: all 0.2s ease;
+      border: 1px solid var(--border);
+    }
+    .excel-dl {
+      background: rgba(0, 245, 160, 0.05);
+      color: var(--accent);
+      border-color: rgba(0, 245, 160, 0.2);
+    }
+    .excel-dl:hover {
+      background: rgba(0, 245, 160, 0.12);
+      border-color: var(--accent);
+      box-shadow: 0 0 12px rgba(0, 245, 160, 0.2);
+    }
+    .csv-dl {
+      background: rgba(255, 255, 255, 0.02);
+      color: var(--text);
+    }
+    .csv-dl:hover {
+      background: rgba(255, 255, 255, 0.08);
+      border-color: rgba(255, 255, 255, 0.25);
+    }
+
+    /* ── Manual check-in styles ─────────────────────── */
+    .manual-checkin-btn {
+      background: rgba(0, 245, 160, 0.08);
+      color: var(--accent);
+      border: 1px solid rgba(0, 245, 160, 0.3);
+      padding: 6px 12px;
+      border-radius: 6px;
+      font-size: 0.75rem;
+      font-weight: 700;
+      cursor: pointer;
+      font-family: var(--font);
+      transition: all 0.2s ease;
+    }
+    .manual-checkin-btn:hover {
+      background: var(--accent);
+      color: var(--bg);
+      box-shadow: 0 0 8px var(--accent);
+    }
+    .badge-status {
+      display: inline-block;
+      padding: 4px 8px;
+      border-radius: 6px;
+      font-size: 0.72rem;
+      font-weight: 700;
+      font-family: var(--font);
+    }
+    .badge-status.scanned {
+      background: rgba(0, 245, 160, 0.12);
+      color: var(--accent);
+      border: 1px solid rgba(0, 245, 160, 0.2);
+    }
+    .badge-status.not-scanned {
+      background: rgba(255, 255, 255, 0.04);
+      color: var(--muted);
+      border: 1px solid var(--border);
+    }
+
+    /* ── Connected Devices Monitor Card styles ── */
+    .device-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 18px 20px;
+      backdrop-filter: blur(12px);
+      transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1), border-color 0.25s;
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .device-card:hover {
+      border-color: rgba(255,255,255,0.20);
+      transform: translateY(-2px);
+      box-shadow: 0 8px 30px rgba(0,0,0,0.3);
+    }
+    .device-card.offline {
+      opacity: 0.55;
+    }
+    .device-card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: start;
+    }
+    .device-card-name {
+      font-size: 1rem;
+      font-weight: 800;
+      color: var(--text);
+      letter-spacing: -0.01em;
+    }
+    .device-card-ip {
+      font-size: 0.72rem;
+      color: var(--muted);
+      font-family: var(--mono);
+      margin-top: 2px;
+    }
+    .device-card-sys {
+      font-size: 0.76rem;
+      color: var(--muted);
+      margin-top: 2px;
+    }
+    .device-card-stats {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-top: 1px solid var(--border);
+      padding-top: 12px;
+      margin-top: 6px;
+    }
+    .device-stat-label {
+      font-size: 0.65rem;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+    .device-stat-val {
+      font-size: 1.25rem;
+      font-weight: 800;
+      color: var(--accent);
+      font-family: var(--mono);
+      margin-top: 2px;
+    }
+    .device-stat-val.offline {
+      color: var(--muted);
+    }
+    .device-activity {
+      font-size: 0.78rem;
+      font-weight: 600;
+      color: var(--text);
+      margin-top: 2px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 140px;
+    }
+    
+    .device-name-input {
+      background: rgba(255,255,255,0.06);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 5px 12px;
+      font-family: var(--font);
+      font-size: 0.8rem;
+      color: var(--text);
+      font-weight: 600;
+      width: 160px;
+      outline: none;
+      transition: border-color 0.25s, background-color 0.25s;
+    }
+    .device-name-input:focus {
+      border-color: var(--accent);
+      background: rgba(255,255,255,0.12);
+    }
+    
+    /* ── Verification Screen Overlay Styles ─────────── */
+    #verify-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 10000;
+      background: rgba(8,12,20,0.94);
+      backdrop-filter: blur(15px);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      opacity: 0;
+      transition: opacity 0.3s ease;
+    }
+    #verify-overlay.active {
+      display: flex;
+      opacity: 1;
+    }
+    .verify-card {
+      background: #0f1624;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 30px;
+      max-width: 480px;
+      width: 92%;
+      text-align: center;
+      transform: scale(0.9);
+      transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+      box-shadow: 0 12px 50px rgba(0,0,0,0.6);
+    }
+    #verify-overlay.active .verify-card {
+      transform: scale(1);
+    }
+    
+    .verify-badge {
+      display: inline-block;
+      padding: 6px 16px;
+      border-radius: 20px;
+      font-size: 0.72rem;
+      font-weight: 800;
+      text-transform: uppercase;
+      margin-bottom: 16px;
+      letter-spacing: 0.05em;
+    }
+    .verify-badge.ok {
+      background: rgba(0, 245, 160, 0.1);
+      border: 1px solid rgba(0, 245, 160, 0.3);
+      color: var(--accent);
+    }
+    .verify-badge.warn {
+      background: rgba(255, 107, 53, 0.12);
+      border: 1px solid rgba(255, 107, 53, 0.3);
+      color: var(--warn);
+    }
+    .verify-badge.err {
+      background: rgba(255, 50, 50, 0.1);
+      border: 1px solid rgba(255, 50, 50, 0.3);
+      color: #ff6b6b;
+    }
+    
+    .verify-fields {
+      border-top: 1px solid var(--border);
+      border-bottom: 1px solid var(--border);
+      padding: 16px 0;
+      margin: 20px 0;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      text-align: left;
+    }
+    
+    .verify-field-item {
+      font-size: 0.85rem;
+      color: var(--muted);
+      font-family: var(--font);
+    }
+    .verify-field-item span {
+      color: var(--text);
+      font-weight: 600;
+      font-family: var(--mono);
+      margin-left: 6px;
+    }
+  </style>
+</head>
+<body>
+
+<!-- ── Global Scan Toast (visible on ALL devices) ── -->
+<div id="scan-toast">
+  <span class="toast-icon" id="toast-icon">✅</span>
+  <div class="toast-body">
+    <div class="toast-name" id="toast-name"></div>
+    <div class="toast-sub"  id="toast-sub"></div>
+  </div>
+</div>
+
+<div class="app">
+
+  <!-- Network Info Bar -->
+  <div class="network-bar" id="network-bar">
+    <span class="network-bar-label">📡 Other Devices:</span>
+    <span class="network-url" id="network-url">Loading…</span>
+    <div style="display: flex; align-items: center; gap: 8px; margin: 0 16px;">
+      <span class="network-bar-label">This Device Label:</span>
+      <input type="text" id="device-name-input" class="device-name-input" placeholder="Device Label" />
+    </div>
+    <div class="devices-badge" id="devices-badge">
+      <div class="devices-dot"></div>
+      <span id="devices-count">1</span>&nbsp;online
+    </div>
+  </div>
+
+  <!-- Header -->
+  <header>
+    <div class="logo">
+      <div class="logo-icon">⬡</div>
+      <div class="logo-text">Event <span>Check-In</span></div>
+    </div>
+    <div style="display: flex; gap: 12px; align-items: center;">
+      <a href="/download/excel" class="download-btn excel-dl" title="Download Highlighted Excel Report">📊 Export Excel</a>
+      <a href="/download/csv" class="download-btn csv-dl" title="Download Raw Check-In CSV Log">📝 Export CSV</a>
+      <div class="header-time">
+        <div id="live-date"></div>
+        <div id="live-time"></div>
+      </div>
+    </div>
+  </header>
+
+  <!-- Stats -->
+  <div class="stats-row">
+    <div class="stat-card total" id="card-total">
+      <div class="stat-label">Total Scans</div>
+      <div class="stat-value" id="stat-total">—</div>
+    </div>
+    <div class="stat-card unique" id="card-unique">
+      <div class="stat-label">Unique Check-ins</div>
+      <div class="stat-value" id="stat-unique">—</div>
+    </div>
+    <div class="stat-card dup" id="card-dup">
+      <div class="stat-label">Duplicate Scans</div>
+      <div class="stat-value" id="stat-dup">—</div>
+    </div>
+  </div>
+
+  <!-- Scanner + Last scan -->
+  <div class="main-grid">
+    <div class="panel">
+      <div class="panel-title">Camera Scanner</div>
+      <div class="scanner-wrap">
+        <video id="scanner" autoplay playsinline muted></video>
+        <div class="scan-overlay">
+          <div class="scan-corner tl"></div>
+          <div class="scan-corner tr"></div>
+          <div class="scan-corner bl"></div>
+          <div class="scan-corner br"></div>
+          <div class="scan-line" id="scan-line"></div>
+        </div>
+      </div>
+      <div class="status-box" id="status">
+        <div class="status-dot"></div>
+        <span id="status-text">Initializing…</span>
+      </div>
+      <button class="restart-btn" id="restart-btn">↺ Restart Scanner</button>
+    </div>
+
+    <div class="panel">
+      <div class="panel-title">Last Scanned</div>
+      <div class="attendee-card" id="attendee-card">
+        <div class="attendee-name" id="att-name">—</div>
+        <div class="attendee-field">Email &nbsp;&nbsp; <span id="att-email">—</span></div>
+        <div class="attendee-field">Reg No &nbsp; <span id="att-reg">—</span></div>
+        <div class="attendee-field">Status &nbsp;&nbsp; <span id="att-status">—</span></div>
+        <div class="attendee-source" id="att-source"></div>
+      </div>
+      <div style="color:var(--muted); font-size:0.85rem; margin-top:16px; line-height:1.6;" id="att-empty">
+        Scan a QR code to see attendee details here.
+      </div>
+    </div>
+  </div>
+
+  <!-- Navigation Tabs -->
+  <div class="tabs-container">
+    <button class="tab-btn active" id="tab-log-btn">Live Scan Log</button>
+    <button class="tab-btn" id="tab-registry-btn">Attendee Registry Lookup</button>
+    <button class="tab-btn" id="tab-devices-btn">📡 Devices Monitor</button>
+    <button class="tab-btn" id="tab-history-btn">My Scans</button>
+  </div>
+
+  <!-- Tab Contents -->
+  <div id="tab-log-content" class="tab-content active">
+    <div class="panel log-panel">
+      <div class="panel-title">Live Scan Log</div>
+      
+      <!-- Advanced Filters for Live Log -->
+      <div style="display: flex; gap: 14px; margin-bottom: 20px; padding: 14px; background: rgba(255,255,255,0.02); border: 1px solid var(--border); border-radius: 10px; align-items: center; flex-wrap: wrap;">
+        <span style="font-size: 0.75rem; font-weight: 700; text-transform: uppercase; color: var(--muted); letter-spacing: 0.05em;">🔍 Filters:</span>
+        
+        <div style="display: flex; flex-direction: column; gap: 4px;">
+          <label style="font-size: 0.65rem; font-weight: 700; text-transform: uppercase; color: var(--muted);">Scanner Device</label>
+          <select id="filter-log-device" style="background: rgba(255,255,255,0.06); border: 1px solid var(--border); border-radius: 6px; padding: 5px 10px; font-family: var(--font); font-size: 0.78rem; color: var(--text); outline: none; min-width: 140px; cursor: pointer;">
+            <option value="">All Devices</option>
+          </select>
+        </div>
+
+        <div style="display: flex; flex-direction: column; gap: 4px;">
+          <label style="font-size: 0.65rem; font-weight: 700; text-transform: uppercase; color: var(--muted);">Scan Count</label>
+          <select id="filter-log-type" style="background: rgba(255,255,255,0.06); border: 1px solid var(--border); border-radius: 6px; padding: 5px 10px; font-family: var(--font); font-size: 0.78rem; color: var(--text); outline: none; min-width: 140px; cursor: pointer;">
+            <option value="">All Scans</option>
+            <option value="unique">Unique Check-ins Only</option>
+            <option value="duplicate">Duplicate Scans Only</option>
+          </select>
+        </div>
+
+        <div style="display: flex; flex-direction: column; gap: 4px;">
+          <label style="font-size: 0.65rem; font-weight: 700; text-transform: uppercase; color: var(--muted);">Time Window</label>
+          <select id="filter-log-time" style="background: rgba(255,255,255,0.06); border: 1px solid var(--border); border-radius: 6px; padding: 5px 10px; font-family: var(--font); font-size: 0.78rem; color: var(--text); outline: none; min-width: 140px; cursor: pointer;">
+            <option value="">All Time</option>
+            <option value="5">Last 5 Minutes</option>
+            <option value="15">Last 15 Minutes</option>
+            <option value="60">Last 1 Hour</option>
+          </select>
+        </div>
+        
+        <button id="reset-log-filters" style="background: transparent; border: 1px solid var(--border); border-radius: 6px; padding: 6px 12px; font-family: var(--font); font-size: 0.75rem; font-weight: 700; color: var(--muted); cursor: pointer; transition: all 0.2s; margin-top: 14px;" onmouseover="this.style.borderColor='rgba(255,255,255,0.25)'; this.style.color='var(--text)'" onmouseout="this.style.borderColor='var(--border)'; this.style.color='var(--muted)'">Reset Filters</button>
+      </div>
+
+      <table id="csv-table" class="display" style="width:100%">
+        <thead>
+          <tr>
+            <th>QR Data</th>
+            <th>Count</th>
+            <th>Last Scan</th>
+            <th>Last Scanner</th>
+            <th>All Timestamps</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div id="tab-registry-content" class="tab-content">
+    <div class="panel log-panel">
+      <div class="panel-title">Registered Attendee List</div>
+      
+      <!-- Advanced Filters for Registry -->
+      <div style="display: flex; gap: 14px; margin-bottom: 20px; padding: 14px; background: rgba(255,255,255,0.02); border: 1px solid var(--border); border-radius: 10px; align-items: center; flex-wrap: wrap;">
+        <span style="font-size: 0.75rem; font-weight: 700; text-transform: uppercase; color: var(--muted); letter-spacing: 0.05em;">🔍 Filters:</span>
+        
+        <div style="display: flex; flex-direction: column; gap: 4px;">
+          <label style="font-size: 0.65rem; font-weight: 700; text-transform: uppercase; color: var(--muted);">Check-In Status</label>
+          <select id="filter-reg-status" style="background: rgba(255,255,255,0.06); border: 1px solid var(--border); border-radius: 6px; padding: 5px 10px; font-family: var(--font); font-size: 0.78rem; color: var(--text); outline: none; min-width: 160px; cursor: pointer;">
+            <option value="">All Registrations</option>
+            <option value="scanned">Checked In Only</option>
+            <option value="not-scanned">Not Checked In Only</option>
+          </select>
+        </div>
+      </div>
+
+      <table id="registry-table" class="display" style="width:100%">
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Email</th>
+            <th>Reg Number</th>
+            <th>Status</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div id="tab-devices-content" class="tab-content">
+    <div class="panel log-panel">
+      <div class="panel-title">Connected Devices Monitor</div>
+      <div id="devices-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px;">
+        <!-- Device Cards will be inserted here dynamically -->
+      </div>
+    </div>
+  </div>
+
+  <div id="tab-history-content" class="tab-content">
+    <div class="panel log-panel">
+      <div class="panel-title">My Scans History (This Device)</div>
+      <div style="margin-bottom: 15px; text-align: right;">
+        <button id="clear-history-btn" style="background: rgba(255,50,50,0.1); border: 1px solid rgba(255,50,50,0.3); color: #ff6b6b; border-radius: 6px; padding: 6px 12px; font-family: var(--font); font-size: 0.75rem; font-weight: 700; cursor: pointer; transition: all 0.2s;">Clear My History</button>
+      </div>
+      <table id="history-table" class="dataTable" style="width:100%">
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Reg Number</th>
+            <th>Timestamp</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody id="history-table-body">
+          <!-- Dynamically populated -->
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+
+<script src="/static/js/socket.io.min.js"></script>
+<script src="/static/js/jquery.min.js"></script>
+<script src="/static/js/jquery.dataTables.min.js"></script>
+<script type="module">
+  import QrScanner from '/static/js/qr-scanner.min.js';
+
+  // Helper to escape HTML safely
+  function escapeHtml(str) {
+    if (!str) return '';
+    return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
+  // Get device browser/OS info
+  function getDeviceType() {
+    const ua = navigator.userAgent;
+    let os = "Device";
+    if (/Windows/i.test(ua)) os = "Windows";
+    else if (/Mac/i.test(ua)) os = "Mac";
+    else if (/iPhone|iPad|iPod/i.test(ua)) os = "iOS";
+    else if (/Android/i.test(ua)) os = "Android";
+    else if (/Linux/i.test(ua)) os = "Linux";
+
+    let br = "Browser";
+    if (/Chrome/i.test(ua)) br = "Chrome";
+    else if (/Firefox/i.test(ua)) br = "Firefox";
+    else if (/Safari/i.test(ua)) br = "Safari";
+    else if (/Edge/i.test(ua)) br = "Edge";
+
+    return `${os} ${br}`;
+  }
+
+  // Set up local device registration info
+  const devNameInput = document.getElementById('device-name-input');
+  let deviceId = localStorage.getItem('device_id');
+  if (!deviceId) {
+    deviceId = 'dev_' + Math.random().toString(36).substr(2, 9);
+    localStorage.setItem('device_id', deviceId);
+  }
+  
+  let deviceName = localStorage.getItem('device_name');
+  if (!deviceName) {
+    deviceName = getDeviceType() + " Scanner";
+    localStorage.setItem('device_name', deviceName);
+  }
+  devNameInput.value = deviceName;
+
+
+  // ── Clock ──────────────────────────────────────────────────────────────────
+  function updateClock() {
+    const now  = new Date();
+    document.getElementById('live-date').textContent = now.toLocaleDateString('en-IN', { weekday:'short', day:'numeric', month:'short', year:'numeric' });
+    document.getElementById('live-time').textContent = now.toLocaleTimeString('en-IN', { hour:'2-digit', minute:'2-digit', second:'2-digit' });
+  }
+  updateClock(); setInterval(updateClock, 1000);
+
+  // ── Network info ──────────────────────────────────────────────────────────
+  fetch('/network_info')
+    .then(r => r.json())
+    .then(d => {
+      document.getElementById('network-url').textContent = d.url + '  (same Wi-Fi only)';
+    })
+    .catch(() => {
+      document.getElementById('network-url').textContent = 'Could not resolve LAN IP';
+    });
+
+  // ── Toast ─────────────────────────────────────────────────────────────────
+  let toastTimer = null;
+  function showToast(name, subtext, type) {
+    const toast = document.getElementById('scan-toast');
+    const icons = { ok: '✅', warn: '⚠️', err: '❌' };
+    document.getElementById('toast-icon').textContent = icons[type] || '🔔';
+    document.getElementById('toast-name').textContent = name;
+    document.getElementById('toast-sub').textContent  = subtext;
+    toast.className = `show ${type}`;
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => { toast.className = type; }, 4000);
+  }
+
+  // ── Audio Feedback (Web Audio API) ────────────────────────────────────────
+  let audioCtx = null;
+  function playBeep(type) {
+    try {
+      if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      if (audioCtx.state === 'suspended') audioCtx.resume();
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+      const now = audioCtx.currentTime;
+      if (type === 'ok') {
+        osc.frequency.setValueAtTime(880, now);
+        gain.gain.setValueAtTime(0.1, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
+        osc.start(now); osc.stop(now + 0.15);
+      } else if (type === 'warn') {
+        osc.frequency.setValueAtTime(554, now);
+        gain.gain.setValueAtTime(0.1, now);
+        gain.gain.setValueAtTime(0.001, now + 0.08);
+        gain.gain.setValueAtTime(0.1, now + 0.1);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.22);
+        osc.start(now); osc.stop(now + 0.22);
+      } else if (type === 'err') {
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(150, now);
+        gain.gain.setValueAtTime(0.12, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.35);
+        osc.start(now); osc.stop(now + 0.35);
+      }
+    } catch (e) { console.warn('Audio failed:', e); }
+  }
+
+  // ── Stats ─────────────────────────────────────────────────────────────────
+  function updateStats(d) {
+    const animate = (id, cardId, val) => {
+      const el = document.getElementById(id);
+      const card = document.getElementById(cardId);
+      if (el.textContent !== String(val)) {
+        el.textContent = val;
+        card.classList.remove('bump');
+        void card.offsetWidth; // reflow to restart animation
+        card.classList.add('bump');
+        setTimeout(() => card.classList.remove('bump'), 400);
+      }
+    };
+    animate('stat-total',  'card-total',  d.total);
+    animate('stat-unique', 'card-unique', d.unique);
+    animate('stat-dup',    'card-dup',    d.duplicate);
+  }
+
+  fetch('/stats').then(r => r.json()).then(updateStats).catch(() => {});
+
+  // ── Status helpers ────────────────────────────────────────────────────────
+  const statusBox  = document.getElementById('status');
+  const statusText = document.getElementById('status-text');
+  const scanLine   = document.getElementById('scan-line');
+
+  function setStatus(msg, type = '') {
+    statusBox.className = `status-box ${type}`;
+    statusText.textContent = msg + ' — ' + new Date().toLocaleTimeString();
+  }
+
+  // ── Attendee card ─────────────────────────────────────────────────────────
+  function showAttendee(details, isDup, source) {
+    const card = document.getElementById('attendee-card');
+    document.getElementById('att-empty').style.display = 'none';
+    card.className = `attendee-card visible${isDup ? ' dup' : ''}`;
+    document.getElementById('att-name').textContent   = details.Name || '—';
+    document.getElementById('att-email').textContent  = details.Email || '—';
+    document.getElementById('att-reg').textContent    = details['Registration Number'] || '—';
+    document.getElementById('att-status').textContent = details.Status || '—';
+    const srcEl = document.getElementById('att-source');
+    srcEl.textContent = source ? `Scanned via ${source}` : '';
+  }
+
+  // ── Local Scan History Helpers ───────────────────────────────────────────
+  function getLocalHistory() {
+    try {
+      const hist = localStorage.getItem('local_scan_history');
+      return hist ? JSON.parse(hist) : [];
+    } catch (e) {
+      return [];
+    }
+  }
+
+  function addLocalHistory(details, type) {
+    if (!details || !details.Name) return;
+    const history = getLocalHistory();
+    const timestamp = new Date().toLocaleTimeString('en-IN', { hour:'2-digit', minute:'2-digit', second:'2-digit' });
+    history.unshift({
+      name: details.Name,
+      reg_no: details['Registration Number'] || '—',
+      timestamp: timestamp,
+      status: details.Status || 'Scanned',
+      type: type // 'ok' or 'warn'
+    });
+    if (history.length > 100) {
+      history.pop();
+    }
+    localStorage.setItem('local_scan_history', JSON.stringify(history));
+    refreshLocalHistoryTable();
+  }
+
+  function refreshLocalHistoryTable() {
+    const tbody = document.getElementById('history-table-body');
+    if (!tbody) return;
+    const history = getLocalHistory();
+    tbody.innerHTML = '';
+    
+    if (history.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="4" style="text-align:center; color:var(--muted); padding: 20px 0;">No scans recorded on this device yet.</td></tr>';
+      return;
+    }
+    
+    history.forEach(item => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${escapeHtml(item.name)}</td>
+        <td>${escapeHtml(item.reg_no)}</td>
+        <td>${escapeHtml(item.timestamp)}</td>
+        <td><span class="badge-status ${item.type === 'warn' ? 'not-scanned' : 'scanned'}">${escapeHtml(item.status)}</span></td>
+      `;
+      tbody.appendChild(tr);
+    });
+  }
+
+  // Initialize local history table view
+  setTimeout(refreshLocalHistoryTable, 100);
+
+  document.getElementById('clear-history-btn').addEventListener('click', () => {
+    localStorage.setItem('local_scan_history', JSON.stringify([]));
+    refreshLocalHistoryTable();
+  });
+
+  // ── Verification Screen Overlay Helpers ──────────────────────────────────
+  function openVerificationOverlay(details, isDuplicate) {
+    const overlay = document.getElementById('verify-overlay');
+    const badge = document.getElementById('verify-badge');
+    const nameEl = document.getElementById('verify-name');
+    const emailEl = document.getElementById('verify-email');
+    const regNumEl = document.getElementById('verify-reg-num');
+    const phoneEl = document.getElementById('verify-phone');
+    const statusEl = document.getElementById('verify-status');
+    const countEl = document.getElementById('verify-count');
+    const customContainer = document.getElementById('verify-custom-fields');
+    
+    if (isDuplicate) {
+      badge.className = 'verify-badge warn';
+      badge.textContent = 'Duplicate Scan';
+    } else {
+      badge.className = 'verify-badge ok';
+      badge.textContent = 'Checked In';
+    }
+    
+    nameEl.textContent = details.Name || '—';
+    emailEl.textContent = details.Email || '—';
+    regNumEl.textContent = details['Registration Number'] || '—';
+    phoneEl.textContent = details.Phone || '—';
+    statusEl.textContent = details.Status || '—';
+    countEl.textContent = details.ScanCount || '—';
+    
+    customContainer.innerHTML = '';
+    if (details.custom_fields) {
+      for (const [key, val] of Object.entries(details.custom_fields)) {
+        const item = document.createElement('div');
+        item.className = 'verify-field-item';
+        item.innerHTML = `${escapeHtml(key)}: <span>${escapeHtml(val)}</span>`;
+        customContainer.appendChild(item);
+      }
+    }
+    
+    overlay.classList.add('active');
+  }
+
+  document.getElementById('verify-next-btn').addEventListener('click', () => {
+    const overlay = document.getElementById('verify-overlay');
+    overlay.classList.remove('active');
+    
+    clearTimeout(scanTimeoutId);
+    processing = false;
+    scanner.start();
+    scanLine.classList.add('active');
+    setStatus('Scanning…');
+  });
+
+  // ── QR Scanner ────────────────────────────────────────────────────────────
+  const video = document.getElementById('scanner');
+  let processing = false;
+  let scanTimeoutId = null;
+
+  const scanner = new QrScanner(
+    video,
+    result => {
+      if (processing) return;
+      processing = true;
+      scanner.stop();
+      scanLine.classList.remove('active');
+      setStatus('Processing scan…');
+
+      // Safety timeout — re-enable if request never finishes
+      scanTimeoutId = setTimeout(() => {
+        processing = false;
+        scanner.start();
+        scanLine.classList.add('active');
+        setStatus('Scanning…');
+      }, 8000);
+
+      fetch('/scan', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ qr_data: result.data ?? result, device_id: deviceId })
+      })
+      .then(r => {
+        if (!r.ok) return r.json().then(e => { throw new Error(e.message || 'Server error'); });
+        return r.json();
+      })
+      .then(data => {
+        clearTimeout(scanTimeoutId);
+        const type = data.is_duplicate ? 'warn' : 'ok';
+        setStatus(data.message, type);
+        openVerificationOverlay(data.details, data.is_duplicate);
+        addLocalHistory(data.details, type);
+      })
+      .catch(e => {
+        setStatus(e.message, 'err');
+        playBeep('err');
+        clearTimeout(scanTimeoutId);
+        processing = false;
+        scanner.start();
+        scanLine.classList.add('active');
+      });
+    },
+    { highlightScanRegion: false, highlightCodeOutline: false }
+  );
+
+  navigator.mediaDevices.getUserMedia({
+    video: { facingMode: 'environment', width: { ideal: 640 }, height: { ideal: 480 } }
+  })
+  .then(stream => {
+    video.srcObject = stream;
+    video.play();
+    scanner.start();
+    scanLine.classList.add('active');
+    setStatus('Scanning…');
+  })
+  .catch(e => setStatus('Camera error: ' + e.message, 'err'));
+
+  document.getElementById('restart-btn').addEventListener('click', () => {
+    clearTimeout(scanTimeoutId);
+    processing = false;
+    scanner.start();
+    scanLine.classList.add('active');
+    setStatus('Scanning…');
+  });
+
+  // ── DataTable: Live Scan Log ──────────────────────────────────────────────
+  const csvTable = $('#csv-table').DataTable({
+    ajax: { 
+      url: '/data_csv', 
+      dataSrc: function(json) {
+        // Dynamically update the Device filter dropdown
+        const select = document.getElementById('filter-log-device');
+        if (select) {
+          const currentVal = select.value;
+          const devices = new Set();
+          json.forEach(row => {
+            if (row['Last Device']) {
+              devices.add(row['Last Device']);
+            }
+          });
+          select.innerHTML = '<option value="">All Devices</option>';
+          Array.from(devices).sort().forEach(d => {
+            const opt = document.createElement('option');
+            opt.value = d;
+            opt.textContent = d;
+            if (d === currentVal) opt.selected = true;
+            select.appendChild(opt);
+          });
+        }
+        return json;
+      }
+    },
+    columns: [
+      {
+        data: 'QR Data',
+        render: d => `<span title="${d}">${d.length > 40 ? d.slice(0,40)+'…' : d}</span>`
+      },
+      {
+        data: 'Scan Count',
+        render: n => `<span class="badge-count${n > 1 ? ' multi' : ''}">${n}</span>`
+      },
+      { data: 'Last Timestamp' },
+      {
+        data: 'Last Device',
+        render: d => d ? `<span style="color: var(--accent2); font-weight: 600;">${escapeHtml(d)}</span>` : '<span style="color: var(--muted);">—</span>'
+      },
+      {
+        data: 'Timestamps',
+        render: d => {
+          const parts = (d || '').split(';').filter(Boolean);
+          return parts.length > 1 ? `${parts.length} scans` : (parts[0] || '—');
+        }
+      }
+    ],
+    order: [[2, 'desc']],
+    pageLength: 15,
+    language: {
+      search: '',
+      searchPlaceholder: 'Search log…',
+      lengthMenu: 'Show _MENU_',
+      info: '_START_–_END_ of _TOTAL_',
+    }
+  });
+
+  // ── DataTable: Attendee Registry ──────────────────────────────────────────
+  const registryTable = $('#registry-table').DataTable({
+    ajax: { url: '/registry', dataSrc: '' },
+    columns: [
+      { data: 'name' },
+      { data: 'email' },
+      { data: 'reg_no' },
+      { 
+        data: 'status',
+        render: d => {
+          const isScanned = d && d.toLowerCase().startsWith('scanned');
+          return `<span class="badge-status ${isScanned ? 'scanned' : 'not-scanned'}">${d}</span>`;
+        }
+      },
+      {
+        data: null,
+        orderable: false,
+        render: (data, type, row) => {
+          const isScanned = row.status && row.status.toLowerCase().startsWith('scanned');
+          if (isScanned) {
+            return `<span style="color: var(--accent); font-size: 0.78rem; font-weight:700;">✓ Checked In</span>`;
+          }
+          const qrEscaped = btoa(unescape(encodeURIComponent(row.qr)));
+          return `<button class="manual-checkin-btn" data-qr-b64="${qrEscaped}">Check In</button>`;
+        }
+      }
+    ],
+    pageLength: 15,
+    language: {
+      search: '',
+      searchPlaceholder: 'Search registry…',
+      lengthMenu: 'Show _MENU_',
+      info: '_START_–_END_ of _TOTAL_',
+    }
+  });
+
+  // ── Advanced DataTables Filtering ──────────────────────────────────────────
+  $.fn.dataTable.ext.search.push(
+    function(settings, data, dataIndex) {
+      const tableId = settings.nTable.id;
+      
+      // 1) Live Scan Log filtering
+      if (tableId === 'csv-table') {
+        const deviceFilter = document.getElementById('filter-log-device').value;
+        const typeFilter = document.getElementById('filter-log-type').value;
+        const timeFilter = document.getElementById('filter-log-time').value;
+        
+        const rowData = csvTable.row(dataIndex).data();
+        if (!rowData) return true;
+        
+        // Filter by Device (match against Last Device)
+        if (deviceFilter && rowData['Last Device'] !== deviceFilter) {
+          return false;
+        }
+        
+        // Filter by Type (Unique vs. Duplicate)
+        if (typeFilter === 'unique' && parseInt(rowData['Scan Count']) > 1) {
+          return false;
+        } else if (typeFilter === 'duplicate' && parseInt(rowData['Scan Count']) <= 1) {
+          return false;
+        }
+        
+        // Filter by Time
+        if (timeFilter) {
+          const lastTsStr = rowData['Last Timestamp'];
+          if (!lastTsStr) return false;
+          
+          const parts = lastTsStr.split(/[- :]/);
+          const lastTsDate = new Date(parts[0], parts[1]-1, parts[2], parts[3], parts[4], parts[5]);
+          const now = new Date();
+          const diffMins = (now - lastTsDate) / (1000 * 60);
+          
+          if (diffMins > parseInt(timeFilter)) {
+            return false;
+          }
+        }
+        
+        return true;
+      }
+      
+      // 2) Registry filtering
+      if (tableId === 'registry-table') {
+        const statusFilter = document.getElementById('filter-reg-status').value;
+        const rowData = registryTable.row(dataIndex).data();
+        if (!rowData) return true;
+        
+        const isScanned = rowData.status && rowData.status.toLowerCase().startsWith('scanned');
+        
+        if (statusFilter === 'scanned' && !isScanned) {
+          return false;
+        }
+        if (statusFilter === 'not-scanned' && isScanned) {
+          return false;
+        }
+        
+        return true;
+      }
+      
+      return true;
+    }
+  );
+
+  // Trigger redraw on filter changes
+  document.getElementById('filter-log-device').addEventListener('change', () => csvTable.draw());
+  document.getElementById('filter-log-type').addEventListener('change', () => csvTable.draw());
+  document.getElementById('filter-log-time').addEventListener('change', () => csvTable.draw());
+  document.getElementById('filter-reg-status').addEventListener('change', () => registryTable.draw());
+  
+  document.getElementById('reset-log-filters').addEventListener('click', () => {
+    document.getElementById('filter-log-device').value = "";
+    document.getElementById('filter-log-type').value = "";
+    document.getElementById('filter-log-time').value = "";
+    csvTable.draw();
+  });
+
+  // Handle Manual Check-in Click
+  $('#registry-table').on('click', '.manual-checkin-btn', function() {
+    const btn = $(this);
+    const b64 = btn.attr('data-qr-b64');
+    const qrData = decodeURIComponent(escape(atob(b64)));
+    
+    btn.prop('disabled', true).text('Checking...');
+    
+    fetch('/manual_checkin', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ qr_data: qrData, device_id: deviceId })
+    })
+    .then(r => {
+      if (!r.ok) return r.json().then(e => { throw new Error(e.message || 'Check-in failed'); });
+      return r.json();
+    })
+    .then(data => {
+      // scan_alert socket event handles card + toast + stats on all devices
+      const type = data.is_duplicate ? 'warn' : 'ok';
+      setStatus(data.message, type);
+      addLocalHistory(data.details, type);
+    })
+    .catch(e => {
+      setStatus(e.message, 'err');
+      playBeep('err');
+      btn.prop('disabled', false).text('Check In');
+    });
+  });
+
+  // ── Tab Toggling ──────────────────────────────────────────────────────────
+  const tabLogBtn      = document.getElementById('tab-log-btn');
+  const tabRegistryBtn = document.getElementById('tab-registry-btn');
+  const tabDevicesBtn  = document.getElementById('tab-devices-btn');
+  const tabHistoryBtn  = document.getElementById('tab-history-btn');
+
+  const tabLogContent      = document.getElementById('tab-log-content');
+  const tabRegistryContent = document.getElementById('tab-registry-content');
+  const tabDevicesContent  = document.getElementById('tab-devices-content');
+  const tabHistoryContent  = document.getElementById('tab-history-content');
+
+  function deactivateAll() {
+    tabLogBtn.classList.remove('active');
+    tabRegistryBtn.classList.remove('active');
+    tabDevicesBtn.classList.remove('active');
+    tabHistoryBtn.classList.remove('active');
+    tabLogContent.classList.remove('active');
+    tabRegistryContent.classList.remove('active');
+    tabDevicesContent.classList.remove('active');
+    tabHistoryContent.classList.remove('active');
+  }
+
+  tabLogBtn.addEventListener('click', () => {
+    deactivateAll();
+    tabLogBtn.classList.add('active');
+    tabLogContent.classList.add('active');
+    csvTable.ajax.reload(null, false);
+  });
+
+  tabRegistryBtn.addEventListener('click', () => {
+    deactivateAll();
+    tabRegistryBtn.classList.add('active');
+    tabRegistryContent.classList.add('active');
+    registryTable.ajax.reload(null, false);
+  });
+
+  tabDevicesBtn.addEventListener('click', () => {
+    deactivateAll();
+    tabDevicesBtn.classList.add('active');
+    tabDevicesContent.classList.add('active');
+  });
+
+  tabHistoryBtn.addEventListener('click', () => {
+    deactivateAll();
+    tabHistoryBtn.classList.add('active');
+    tabHistoryContent.classList.add('active');
+    refreshLocalHistoryTable();
+  });
+
+  // ── Socket.IO real-time events ────────────────────────────────────────────
+  const socket = io();
+
+  // Handle local name edits and sync
+  devNameInput.addEventListener('change', () => {
+    const newName = devNameInput.value.trim();
+    if (newName) {
+      deviceName = newName;
+      localStorage.setItem('device_name', newName);
+      socket.emit('rename_device', { device_id: deviceId, name: newName });
+    }
+  });
+
+  // ── scan_alert: broadcast to ALL devices on every scan ────────────────────
+  socket.on('scan_alert', data => {
+    const type = data.is_duplicate ? 'warn' : 'ok';
+    // 1. Play audio feedback
+    playBeep(type);
+    // 2. Show global toast on this device
+    if (data.name) {
+      showToast(
+        data.name,
+        data.is_duplicate
+          ? `⚠️ Already checked in — ${data.status}`
+          : `✅ Checked in — ${data.status}`,
+        type
+      );
+    }
+    // 3. Update the attendee card on this device
+    if (data.details && data.details.Name) {
+      showAttendee(data.details, data.is_duplicate, data.device_name || 'another device');
+    }
+  });
+
+  // ── row_updated: live log + registry sync on ALL devices ──────────────────
+  socket.on('row_updated', row => {
+    clearTimeout(scanTimeoutId);
+
+    const rec = {
+      'QR Data':        row.qr_data,
+      'Scan Count':     row.scan_count,
+      'Last Timestamp': row.last_timestamp,
+      'Last Device':    row.last_device,
+      'Devices':        row.devices,
+      'Timestamps':     row.timestamps
+    };
+
+    // Update or insert row in scan log table
+    let found = false;
+    csvTable.rows().every(function() {
+      if (this.data()['QR Data'] === row.qr_data) {
+        this.data(rec);
+        $(this.node()).addClass('new-row');
+        setTimeout(() => $(this.node()).removeClass('new-row'), 1600);
+        found = true;
+        return false;
+      }
+    });
+    if (!found) {
+      const newRow = csvTable.row.add(rec);
+      $(newRow.node()).addClass('new-row');
+      setTimeout(() => $(newRow.node()).removeClass('new-row'), 1600);
+    }
+    csvTable.order([[2, 'desc']]).draw(false);
+
+    // Sync registry table so status badges update
+    registryTable.ajax.reload(null, false);
+
+    // Scanner resume is handled by next scan button or local callback
+  });
+
+  // ── stats_updated: push stat cards to all devices instantly ───────────────
+  socket.on('stats_updated', updateStats);
+
+  // ── clients_count: show how many devices are online ───────────────────────
+  socket.on('clients_count', data => {
+    document.getElementById('devices-count').textContent = data.count;
+  });
+
+  // ── devices_updated: render card grid of all connected devices ─────────────
+  socket.on('devices_updated', devs => {
+    const grid = document.getElementById('devices-grid');
+    if (!grid) return;
+    grid.innerHTML = '';
+    
+    devs.forEach(d => {
+      const isLocal = d.id === deviceId;
+      const card = document.createElement('div');
+      card.className = `device-card ${d.online ? '' : 'offline'}`;
+      
+      card.innerHTML = `
+        <div class="device-card-header">
+          <div>
+            <div class="device-card-name">
+              ${escapeHtml(d.name)} ${isLocal ? '<span style="font-size:0.72rem; color:var(--accent); font-weight:600;">(This Device)</span>' : ''}
+            </div>
+            <div class="device-card-ip">${escapeHtml(d.ip)}</div>
+          </div>
+          <span class="badge-status ${d.online ? 'scanned' : 'not-scanned'}">
+            ${d.online ? 'Online' : 'Offline'}
+          </span>
+        </div>
+        <div class="device-card-sys">System: <span style="color:var(--text); font-weight: 500;">${escapeHtml(d.user_agent)}</span></div>
+        <div class="device-card-stats">
+          <div>
+            <div class="device-stat-label">Scans Processed</div>
+            <div class="device-stat-val ${d.online ? '' : 'offline'}">${d.scans}</div>
+          </div>
+          <div style="text-align: right;">
+            <div class="device-stat-label">Last Activity</div>
+            <div class="device-activity" title="${escapeHtml(d.last_active_time)}">${escapeHtml(d.last_activity)}</div>
+          </div>
+        </div>
+      `;
+      grid.appendChild(card);
+    });
+  });
+
+  // ── Connection status ─────────────────────────────────────────────────────
+  socket.on('disconnect', () => setStatus('Connection lost — reconnecting…', 'err'));
+  socket.on('connect',    () => {
+    setStatus('Connected. Scanning…');
+    socket.emit('register_device', { device_id: deviceId, device_name: deviceName });
+  });
+</script>
+
+<!-- ── Verification Screen Overlay ── -->
+<div id="verify-overlay">
+  <div class="verify-card">
+    <div class="verify-badge" id="verify-badge">Checked In</div>
+    <h2 id="verify-name" style="font-size: 1.8rem; font-weight: 800; margin-bottom: 8px;">Attendee Name</h2>
+    <div style="color: var(--muted); font-size: 0.9rem; margin-bottom: 12px;" id="verify-email">email@example.com</div>
+    
+    <div class="verify-fields">
+      <div class="verify-field-item">Registration Number: <span id="verify-reg-num">—</span></div>
+      <div class="verify-field-item">Phone: <span id="verify-phone">—</span></div>
+      <div class="verify-field-item">Status: <span id="verify-status">—</span></div>
+      <div class="verify-field-item">Scan Count: <span id="verify-count">—</span></div>
+      <div id="verify-custom-fields" style="display: flex; flex-direction: column; gap: 8px; margin-top: 10px; border-top: 1px dashed var(--border); padding-top: 10px;">
+        <!-- Custom fields dynamically loaded -->
+      </div>
+    </div>
+    
+    <button id="verify-next-btn" style="width: 100%; padding: 16px; background: var(--accent); color: var(--bg); border: none; border-radius: 12px; font-family: var(--font); font-size: 1.1rem; font-weight: 800; cursor: pointer; box-shadow: 0 4px 15px rgba(0,245,160,0.3); transition: all 0.2s ease;">Verify & Next Scan</button>
+  </div>
+</div>
+
+</body>
+</html>

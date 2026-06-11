@@ -1,0 +1,16 @@
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.ipynb_checkpoints/
+events/
+qrcodes/
+barcodes/
+qrcodes_samples/
+scanned_log.csv
+registrations_highlighted.xlsx
+.env
+instance/
+dist/
+build/
+*.egg-info/
