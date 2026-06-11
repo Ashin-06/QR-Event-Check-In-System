@@ -21,6 +21,56 @@
       --radius:   16px;
       --font:     'Syne', sans-serif;
       --mono:     'JetBrains Mono', monospace;
+
+      /* Added dynamic colors */
+      --modal-bg:  #0f1624;
+      --input-bg:  rgba(255,255,255,0.05);
+      --toast-bg:  rgba(8, 12, 20, 0.92);
+      --text-highlight: rgba(255,255,255,0.03);
+      --badge-inactive-bg: rgba(255, 255, 255, 0.04);
+      --btn-csv-bg: rgba(255, 255, 255, 0.02);
+      --btn-csv-hover-bg: rgba(255, 255, 255, 0.08);
+      --btn-csv-border-hover: rgba(255, 255, 255, 0.25);
+      --card-hover-border: rgba(255,255,255,0.2);
+      --datatable-header-border: rgba(255,255,255,0.20);
+      --datatable-row-border: rgba(255,255,255,0.05);
+      --datatable-input-focus-bg: rgba(255,255,255,0.12);
+      --active-node-bg: rgba(0, 245, 160, 0.1);
+      --active-node-border: rgba(0, 245, 160, 0.2);
+      --shadow: rgba(0,0,0,0.5);
+      --overlay-bg: rgba(8,12,20,0.85);
+    }
+
+    body.light-mode {
+      --bg:       #f2f5fa;
+      --surface:  rgba(255,255,255,0.75);
+      --border:   rgba(8,12,20,0.09);
+      --accent:   #00b875;     /* Sleek dark green for readability in light mode */
+      --accent2:  #0077b6;     /* Sleek blue */
+      --warn:     #e65c00;
+      --text:     #121b2d;
+      --muted:    #5c6b8c;
+      --success-bg: rgba(0,184,117,0.12);
+      --warn-bg:    rgba(230,92,0,0.12);
+      
+      --modal-bg:  #ffffff;
+      --input-bg:  rgba(8,12,20,0.04);
+      --toast-bg:  rgba(255, 255, 255, 0.95);
+      --text-highlight: rgba(8,12,20,0.02);
+      --badge-inactive-bg: rgba(8, 12, 20, 0.04);
+      --btn-csv-bg: rgba(8, 12, 20, 0.03);
+      --btn-csv-hover-bg: rgba(8, 12, 20, 0.08);
+      --btn-csv-border-hover: rgba(8, 12, 20, 0.2);
+      --card-hover-border: rgba(8,12,20,0.18);
+      --datatable-header-border: rgba(8,12,20,0.15);
+      --datatable-row-border: rgba(8,12,20,0.05);
+      --datatable-input-focus-bg: rgba(8,12,20,0.06);
+      --active-node-bg: rgba(0, 184, 117, 0.1);
+      --active-node-border: rgba(0, 184, 117, 0.2);
+      --shadow: rgba(8,12,20,0.08);
+      --mesh1: rgba(0,184,117,0.05);
+      --mesh2: rgba(0,119,182,0.05);
+      --overlay-bg: rgba(242,245,250,0.85);
     }
 
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -38,8 +88,8 @@
       content: '';
       position: fixed; inset: 0; z-index: 0;
       background:
-        radial-gradient(ellipse 60% 50% at 15% 20%, rgba(0,245,160,0.06) 0%, transparent 70%),
-        radial-gradient(ellipse 50% 40% at 85% 75%, rgba(0,180,216,0.06) 0%, transparent 70%);
+        radial-gradient(ellipse 60% 50% at 15% 20%, var(--mesh1, rgba(0,245,160,0.06)) 0%, transparent 70%),
+        radial-gradient(ellipse 50% 40% at 85% 75%, var(--mesh2, rgba(0,180,216,0.06)) 0%, transparent 70%);
       pointer-events: none;
     }
 
@@ -176,7 +226,7 @@
       backdrop-filter: blur(12px);
       transition: border-color 0.2s, transform 0.15s;
     }
-    .stat-card:hover { border-color: rgba(255,255,255,0.2); }
+    .stat-card:hover { border-color: var(--card-hover-border); }
     .stat-card.bump { animation: statBump 0.4s ease; }
     @keyframes statBump {
       0%   { transform: scale(1); }
@@ -253,7 +303,7 @@
       font-weight: 600;
       min-height: 40px;
       display: flex; align-items: center; gap: 8px;
-      background: rgba(255,255,255,0.04);
+      background: var(--input-bg);
       border: 1px solid var(--border);
       transition: all 0.3s ease;
     }
@@ -282,8 +332,8 @@
       transition: background 0.2s, border-color 0.2s;
     }
     .restart-btn:hover {
-      background: rgba(255,255,255,0.06);
-      border-color: rgba(255,255,255,0.25);
+      background: var(--btn-csv-hover-bg);
+      border-color: var(--btn-csv-border-hover);
     }
 
     /* ── Registry Operations styles ──────────────────── */
@@ -308,7 +358,7 @@
     }
     .ops-tab-btn:hover {
       color: var(--text);
-      background: rgba(255,255,255,0.02);
+      background: var(--btn-csv-bg);
     }
     .ops-tab-btn.active {
       color: var(--accent);
@@ -335,7 +385,7 @@
       letter-spacing: 0.03em;
     }
     .form-input {
-      background: rgba(255,255,255,0.05);
+      background: var(--input-bg);
       border: 1px solid var(--border);
       border-radius: 8px;
       padding: 8px 12px;
@@ -370,7 +420,7 @@
 
     /* ── Progress bar & logs console ─────────────────── */
     .progress-bar-wrap {
-      background: rgba(255,255,255,0.04);
+      background: var(--input-bg);
       border-radius: 6px;
       height: 12px;
       overflow: hidden;
@@ -392,7 +442,7 @@
       font-weight: 600;
     }
     .log-console {
-      background: rgba(0,0,0,0.5);
+      background: var(--text-highlight);
       border: 1px solid var(--border);
       border-radius: 8px;
       font-family: var(--mono);
@@ -411,7 +461,7 @@
       position: fixed;
       inset: 0;
       z-index: 10000;
-      background: rgba(8,12,20,0.8);
+      background: var(--overlay-bg);
       backdrop-filter: blur(8px);
       display: none;
       align-items: center;
@@ -424,7 +474,7 @@
       opacity: 1;
     }
     .qr-modal-content {
-      background: #0f1624;
+      background: var(--modal-bg);
       border: 1px solid var(--border);
       border-radius: var(--radius);
       padding: 24px;
@@ -509,7 +559,7 @@
 
     /* ── Connected Devices Cards ───────────────────── */
     .device-card {
-      background: rgba(255,255,255,0.02);
+      background: var(--btn-csv-bg);
       border: 1px solid var(--border);
       border-radius: 12px;
       padding: 14px 16px;
@@ -517,7 +567,7 @@
       transition: transform 0.2s, border-color 0.2s;
     }
     .device-card:hover {
-      border-color: rgba(255,255,255,0.20);
+      border-color: var(--card-hover-border);
       transform: translateY(-1px);
     }
     .device-card.offline { opacity: 0.55; }
@@ -535,7 +585,7 @@
       display: flex;
       justify-content: space-between;
       align-items: center;
-      border-top: 1px solid rgba(255,255,255,0.05);
+      border-top: 1px solid var(--border);
       padding-top: 8px;
     }
     .device-stat-label { font-size: 0.62rem; font-weight: 700; color: var(--muted); text-transform: uppercase; }
@@ -566,7 +616,7 @@
     .dataTables_wrapper { color: var(--text); }
     table.dataTable { border-collapse: collapse !important; width: 100% !important; margin-bottom: 12px !important; }
     table.dataTable thead th {
-      background: rgba(255,255,255,0.03) !important;
+      background: var(--text-highlight) !important;
       color: var(--muted) !important;
       font-family: var(--font) !important;
       font-size: 0.70rem !important;
@@ -588,10 +638,10 @@
       text-overflow: ellipsis;
       max-width: 180px;
     }
-    table.dataTable tbody tr:hover td { background: rgba(255,255,255,0.03) !important; }
+    table.dataTable tbody tr:hover td { background: var(--text-highlight) !important; }
     .dataTables_filter input,
     .dataTables_length select {
-      background: rgba(255,255,255,0.05) !important;
+      background: var(--input-bg) !important;
       border: 1px solid var(--border) !important;
       border-radius: 8px !important;
       color: var(--text) !important;
@@ -620,7 +670,7 @@
       font-size: 0.70rem; font-weight: 700;
     }
     .badge-status.scanned { background: rgba(0, 245, 160, 0.12); color: var(--accent); border: 1px solid rgba(0, 245, 160, 0.2); }
-    .badge-status.not-scanned { background: rgba(255, 255, 255, 0.04); color: var(--muted); border: 1px solid var(--border); }
+    .badge-status.not-scanned { background: var(--badge-inactive-bg); color: var(--muted); border: 1px solid var(--border); }
 
     /* ── Action buttons ────────────────────────────── */
     .download-btn {
@@ -638,8 +688,8 @@
     }
     .excel-dl { background: rgba(0, 245, 160, 0.05); color: var(--accent); border-color: rgba(0, 245, 160, 0.2); }
     .excel-dl:hover { background: rgba(0, 245, 160, 0.12); border-color: var(--accent); box-shadow: 0 0 12px rgba(0, 245, 160, 0.2); }
-    .csv-dl { background: rgba(255, 255, 255, 0.02); color: var(--text); }
-    .csv-dl:hover { background: rgba(255, 255, 255, 0.08); border-color: rgba(255, 255, 255, 0.25); }
+    .csv-dl { background: var(--btn-csv-bg); color: var(--text); }
+    .csv-dl:hover { background: var(--btn-csv-hover-bg); border-color: var(--btn-csv-border-hover); }
 
     .manual-checkin-btn {
       background: rgba(0, 245, 160, 0.08);
@@ -656,7 +706,7 @@
     .manual-checkin-btn:hover { background: var(--accent); color: var(--bg); box-shadow: 0 0 6px var(--accent); }
 
     .device-name-input {
-      background: rgba(255,255,255,0.06);
+      background: var(--input-bg);
       border: 1px solid var(--border);
       border-radius: 8px;
       padding: 4px 10px;
@@ -668,14 +718,14 @@
       outline: none;
       transition: border-color 0.25s, background-color 0.25s;
     }
-    .device-name-input:focus { border-color: var(--accent); background: rgba(255,255,255,0.12); }
+    .device-name-input:focus { border-color: var(--accent); background: var(--datatable-input-focus-bg); }
 
     /* ── Import Preview Modal ────────────────────────── */
     .preview-modal {
       position: fixed;
       inset: 0;
       z-index: 10000;
-      background: rgba(8,12,20,0.85);
+      background: var(--overlay-bg);
       backdrop-filter: blur(12px);
       display: none;
       align-items: center;
@@ -688,7 +738,7 @@
       opacity: 1;
     }
     .preview-modal-content {
-      background: #0f1624;
+      background: var(--modal-bg);
       border: 1px solid var(--border);
       border-radius: var(--radius);
       padding: 24px;
@@ -741,7 +791,7 @@
       margin-bottom: 16px;
     }
     .preview-summary-card {
-      background: rgba(255,255,255,0.02);
+      background: var(--btn-csv-bg);
       border: 1px solid var(--border);
       border-radius: 8px;
       padding: 10px 14px;
@@ -768,7 +818,7 @@
       display: flex;
       gap: 16px;
       flex-wrap: wrap;
-      background: rgba(255,255,255,0.02);
+      background: var(--btn-csv-bg);
       border: 1px solid var(--border);
       border-radius: 10px;
       padding: 12px;
@@ -800,7 +850,7 @@
       border-bottom: 1px solid var(--border);
     }
     .preview-table th {
-      background: rgba(255,255,255,0.03);
+      background: var(--text-highlight);
       color: var(--muted);
       font-weight: 700;
       text-transform: uppercase;
@@ -848,11 +898,11 @@
       margin-top: 2px;
     }
     .event-tree-node:hover {
-      background: rgba(255, 255, 255, 0.04);
+      background: var(--badge-inactive-bg);
     }
     .event-tree-node.active-node {
-      background: rgba(0, 245, 160, 0.1);
-      border: 1px solid rgba(0, 245, 160, 0.2);
+      background: var(--active-node-bg);
+      border: 1px solid var(--active-node-border);
       color: var(--accent);
       font-weight: 700;
     }
@@ -875,12 +925,12 @@
       pointer-events: none;
     }
     .dash-toast {
-      background: rgba(8, 12, 20, 0.92);
+      background: var(--toast-bg);
       border: 1px solid var(--border);
       border-radius: 12px;
       padding: 12px 16px;
       backdrop-filter: blur(20px);
-      box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+      box-shadow: 0 8px 32px var(--shadow);
       display: flex;
       align-items: center;
       gap: 12px;
@@ -909,7 +959,7 @@
       position: fixed;
       inset: 0;
       z-index: 10005;
-      background: rgba(8,12,20,0.85);
+      background: var(--overlay-bg);
       backdrop-filter: blur(12px);
       display: none;
       align-items: center;
@@ -922,7 +972,7 @@
       opacity: 1;
     }
     .help-modal-content {
-      background: #0f1624;
+      background: var(--modal-bg);
       border: 1px solid var(--border);
       border-radius: var(--radius);
       padding: 28px;
@@ -1006,14 +1056,14 @@
     }
     .help-markdown code {
       font-family: var(--mono);
-      background: rgba(255,255,255,0.06);
+      background: var(--input-bg);
       padding: 2px 6px;
       border-radius: 4px;
       font-size: 0.8rem;
       color: var(--accent);
     }
     .help-markdown pre {
-      background: rgba(0,0,0,0.3);
+      background: var(--text-highlight);
       padding: 12px;
       border-radius: 8px;
       overflow-x: auto;
@@ -1041,6 +1091,14 @@
   </style>
 </head>
 <body>
+<script>
+  (function() {
+    const savedTheme = localStorage.getItem('theme') || 'dark';
+    if (savedTheme === 'light') {
+      document.body.classList.add('light-mode');
+    }
+  })();
+</script>
 
 <!-- ── Global Scan Toast ── -->
 <div id="scan-toast">
@@ -1074,6 +1132,7 @@
       <div class="logo-text">Manager <span>Control Center</span></div>
     </div>
     <div style="display: flex; gap: 12px; align-items: center;">
+      <button id="btn-theme-toggle" class="download-btn csv-dl" style="border-color: var(--accent2); color: var(--accent2); background: transparent; cursor: pointer; font-family: var(--font); font-size: 0.76rem; font-weight: 700; display: flex; align-items: center; gap: 6px;">🌓 Theme</button>
       <button id="btn-show-help" class="download-btn csv-dl" style="border-color: #f39c12; color: #f39c12; background: transparent; cursor: pointer; font-family: var(--font); font-size: 0.76rem; font-weight: 700; display: flex; align-items: center; gap: 6px;">📖 Help Guide</button>
       <a href="/download/excel" class="download-btn excel-dl">📊 Export Excel</a>
       <a href="/download/csv" class="download-btn csv-dl">📝 Export CSV</a>
@@ -2915,6 +2974,15 @@
       if (e.target === helpModal) {
         helpModal.classList.remove('active');
       }
+    });
+  }
+  // ── Theme Toggle Logic ────────────────────────────────────────────────────
+  const themeToggle = document.getElementById('btn-theme-toggle');
+  if (themeToggle) {
+    themeToggle.addEventListener('click', () => {
+      document.body.classList.toggle('light-mode');
+      const activeTheme = document.body.classList.contains('light-mode') ? 'light' : 'dark';
+      localStorage.setItem('theme', activeTheme);
     });
   }
 

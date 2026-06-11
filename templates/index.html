@@ -21,6 +21,56 @@
       --radius:   16px;
       --font:     'Syne', sans-serif;
       --mono:     'JetBrains Mono', monospace;
+
+      /* Added dynamic colors */
+      --modal-bg:  #0f1624;
+      --input-bg:  rgba(255,255,255,0.05);
+      --toast-bg:  rgba(8, 12, 20, 0.92);
+      --text-highlight: rgba(255,255,255,0.03);
+      --badge-inactive-bg: rgba(255, 255, 255, 0.04);
+      --btn-csv-bg: rgba(255, 255, 255, 0.02);
+      --btn-csv-hover-bg: rgba(255, 255, 255, 0.08);
+      --btn-csv-border-hover: rgba(255, 255, 255, 0.25);
+      --card-hover-border: rgba(255,255,255,0.2);
+      --datatable-header-border: rgba(255,255,255,0.20);
+      --datatable-row-border: rgba(255,255,255,0.05);
+      --datatable-input-focus-bg: rgba(255,255,255,0.12);
+      --active-node-bg: rgba(0, 245, 160, 0.1);
+      --active-node-border: rgba(0, 245, 160, 0.2);
+      --shadow: rgba(0,0,0,0.5);
+      --overlay-bg: rgba(8,12,20,0.85);
+    }
+
+    body.light-mode {
+      --bg:       #f2f5fa;
+      --surface:  rgba(255,255,255,0.75);
+      --border:   rgba(8,12,20,0.09);
+      --accent:   #00b875;     /* Sleek dark green for readability in light mode */
+      --accent2:  #0077b6;     /* Sleek blue */
+      --warn:     #e65c00;
+      --text:     #121b2d;
+      --muted:    #5c6b8c;
+      --success-bg: rgba(0,184,117,0.12);
+      --warn-bg:    rgba(230,92,0,0.12);
+      
+      --modal-bg:  #ffffff;
+      --input-bg:  rgba(8,12,20,0.04);
+      --toast-bg:  rgba(255, 255, 255, 0.95);
+      --text-highlight: rgba(8,12,20,0.02);
+      --badge-inactive-bg: rgba(8, 12, 20, 0.04);
+      --btn-csv-bg: rgba(8, 12, 20, 0.03);
+      --btn-csv-hover-bg: rgba(8, 12, 20, 0.08);
+      --btn-csv-border-hover: rgba(8, 12, 20, 0.2);
+      --card-hover-border: rgba(8,12,20,0.18);
+      --datatable-header-border: rgba(8,12,20,0.15);
+      --datatable-row-border: rgba(8,12,20,0.05);
+      --datatable-input-focus-bg: rgba(8,12,20,0.06);
+      --active-node-bg: rgba(0, 184, 117, 0.1);
+      --active-node-border: rgba(0, 184, 117, 0.2);
+      --shadow: rgba(8,12,20,0.08);
+      --mesh1: rgba(0,184,117,0.05);
+      --mesh2: rgba(0,119,182,0.05);
+      --overlay-bg: rgba(242,245,250,0.85);
     }
 
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -38,8 +88,8 @@
       content: '';
       position: fixed; inset: 0; z-index: 0;
       background:
-        radial-gradient(ellipse 60% 50% at 15% 20%, rgba(0,245,160,0.06) 0%, transparent 70%),
-        radial-gradient(ellipse 50% 40% at 85% 75%, rgba(0,180,216,0.06) 0%, transparent 70%);
+        radial-gradient(ellipse 60% 50% at 15% 20%, var(--mesh1, rgba(0,245,160,0.06)) 0%, transparent 70%),
+        radial-gradient(ellipse 50% 40% at 85% 75%, var(--mesh2, rgba(0,180,216,0.06)) 0%, transparent 70%);
       pointer-events: none;
     }
 
@@ -176,7 +226,7 @@
       backdrop-filter: blur(12px);
       transition: border-color 0.2s, transform 0.15s;
     }
-    .stat-card:hover { border-color: rgba(255,255,255,0.2); }
+    .stat-card:hover { border-color: var(--card-hover-border); }
     .stat-card.bump { animation: statBump 0.4s ease; }
     @keyframes statBump {
       0%   { transform: scale(1); }
@@ -270,7 +320,7 @@
       font-weight: 600;
       min-height: 52px;
       display: flex; align-items: center; gap: 10px;
-      background: rgba(255,255,255,0.04);
+      background: var(--input-bg);
       border: 1px solid var(--border);
       transition: all 0.3s ease;
     }
@@ -300,8 +350,8 @@
       transition: background 0.2s, border-color 0.2s;
     }
     .restart-btn:hover {
-      background: rgba(255,255,255,0.06);
-      border-color: rgba(255,255,255,0.25);
+      background: var(--btn-csv-hover-bg);
+      border-color: var(--btn-csv-border-hover);
     }
 
     /* ── Attendee card ─────────────────────────────── */
@@ -351,7 +401,7 @@
     .dataTables_wrapper { color: var(--text); }
     table.dataTable { border-collapse: collapse !important; width: 100% !important; }
     table.dataTable thead th {
-      background: rgba(255,255,255,0.05) !important;
+      background: var(--text-highlight) !important;
       color: var(--muted) !important;
       font-family: var(--font) !important;
       font-size: 0.72rem !important;
@@ -373,10 +423,10 @@
       text-overflow: ellipsis;
       max-width: 200px;
     }
-    table.dataTable tbody tr:hover td { background: rgba(255,255,255,0.03) !important; }
+    table.dataTable tbody tr:hover td { background: var(--text-highlight) !important; }
     .dataTables_filter input,
     .dataTables_length select {
-      background: rgba(255,255,255,0.05) !important;
+      background: var(--input-bg) !important;
       border: 1px solid var(--border) !important;
       border-radius: 8px !important;
       color: var(--text) !important;
@@ -428,7 +478,7 @@
     }
     .tab-btn:hover {
       color: var(--text);
-      background: rgba(255,255,255,0.02);
+      background: var(--btn-csv-bg);
     }
     .tab-btn.active {
       color: var(--accent);
@@ -468,12 +518,12 @@
       box-shadow: 0 0 12px rgba(0, 245, 160, 0.2);
     }
     .csv-dl {
-      background: rgba(255, 255, 255, 0.02);
+      background: var(--btn-csv-bg);
       color: var(--text);
     }
     .csv-dl:hover {
-      background: rgba(255, 255, 255, 0.08);
-      border-color: rgba(255, 255, 255, 0.25);
+      background: var(--btn-csv-hover-bg);
+      border-color: var(--btn-csv-border-hover);
     }
 
     /* ── Manual check-in styles ─────────────────────── */
@@ -508,7 +558,7 @@
       border: 1px solid rgba(0, 245, 160, 0.2);
     }
     .badge-status.not-scanned {
-      background: rgba(255, 255, 255, 0.04);
+      background: var(--badge-inactive-bg);
       color: var(--muted);
       border: 1px solid var(--border);
     }
@@ -527,9 +577,9 @@
       gap: 10px;
     }
     .device-card:hover {
-      border-color: rgba(255,255,255,0.20);
+      border-color: var(--card-hover-border);
       transform: translateY(-2px);
-      box-shadow: 0 8px 30px rgba(0,0,0,0.3);
+      box-shadow: 0 8px 30px var(--shadow);
     }
     .device-card.offline {
       opacity: 0.55;
@@ -593,7 +643,7 @@
     }
     
     .device-name-input {
-      background: rgba(255,255,255,0.06);
+      background: var(--input-bg);
       border: 1px solid var(--border);
       border-radius: 8px;
       padding: 5px 12px;
@@ -607,7 +657,7 @@
     }
     .device-name-input:focus {
       border-color: var(--accent);
-      background: rgba(255,255,255,0.12);
+      background: var(--datatable-input-focus-bg);
     }
     
     /* ── Verification Screen Overlay Styles ─────────── */
@@ -615,7 +665,7 @@
       position: fixed;
       inset: 0;
       z-index: 10000;
-      background: rgba(8,12,20,0.94);
+      background: var(--overlay-bg);
       backdrop-filter: blur(15px);
       display: none;
       align-items: center;
@@ -628,7 +678,7 @@
       opacity: 1;
     }
     .verify-card {
-      background: #0f1624;
+      background: var(--modal-bg);
       border: 1px solid var(--border);
       border-radius: var(--radius);
       padding: 30px;
@@ -637,7 +687,7 @@
       text-align: center;
       transform: scale(0.9);
       transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
-      box-shadow: 0 12px 50px rgba(0,0,0,0.6);
+      box-shadow: 0 12px 50px var(--shadow);
     }
     #verify-overlay.active .verify-card {
       transform: scale(1);
@@ -715,6 +765,14 @@
   </style>
 </head>
 <body>
+<script>
+  (function() {
+    const savedTheme = localStorage.getItem('theme') || 'dark';
+    if (savedTheme === 'light') {
+      document.body.classList.add('light-mode');
+    }
+  })();
+</script>
 
 <!-- ── Global Scan Toast (visible on ALL devices) ── -->
 <div id="scan-toast">
@@ -748,6 +806,7 @@
       <div class="logo-text">Event <span>Check-In</span></div>
     </div>
     <div style="display: flex; gap: 12px; align-items: center;">
+      <button id="btn-theme-toggle" class="download-btn csv-dl" style="border-color: var(--accent2); color: var(--accent2); background: transparent; cursor: pointer; font-family: var(--font); font-size: 0.76rem; font-weight: 700; display: flex; align-items: center; gap: 6px; padding: 6px 14px; border-radius: 8px;">🌓 Theme</button>
       <a href="/download/excel" class="download-btn excel-dl" title="Download Highlighted Excel Report">📊 Export Excel</a>
       <a href="/download/csv" class="download-btn csv-dl" title="Download Raw Check-In CSV Log">📝 Export CSV</a>
       <div class="header-time">
@@ -798,11 +857,11 @@
       <button class="restart-btn" id="restart-btn">↺ Restart Scanner</button>
       
       <!-- Quick Scan Mode Toggle -->
-      <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 14px; padding: 10px; background: rgba(255,255,255,0.02); border: 1px solid var(--border); border-radius: 10px;">
+      <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 14px; padding: 10px; background: var(--btn-csv-bg); border: 1px solid var(--border); border-radius: 10px;">
         <span style="font-size: 0.85rem; font-weight: 700; color: var(--text);">⚡ Quick Scan Mode</span>
         <label class="switch" style="position: relative; display: inline-block; width: 44px; height: 22px;">
           <input type="checkbox" id="quick-scan-toggle" style="opacity: 0; width: 0; height: 0;">
-          <span class="slider" style="position: absolute; cursor: pointer; inset: 0; background-color: rgba(255,255,255,0.1); transition: .3s; border-radius: 22px; border: 1px solid var(--border);"></span>
+          <span class="slider" style="position: absolute; cursor: pointer; inset: 0; background-color: var(--input-bg); transition: .3s; border-radius: 22px; border: 1px solid var(--border);"></span>
         </label>
       </div>
     </div>
@@ -836,19 +895,19 @@
       <div class="panel-title">Live Scan Log</div>
       
       <!-- Advanced Filters for Live Log -->
-      <div style="display: flex; gap: 14px; margin-bottom: 20px; padding: 14px; background: rgba(255,255,255,0.02); border: 1px solid var(--border); border-radius: 10px; align-items: center; flex-wrap: wrap;">
+      <div style="display: flex; gap: 14px; margin-bottom: 20px; padding: 14px; background: var(--btn-csv-bg); border: 1px solid var(--border); border-radius: 10px; align-items: center; flex-wrap: wrap;">
         <span style="font-size: 0.75rem; font-weight: 700; text-transform: uppercase; color: var(--muted); letter-spacing: 0.05em;">🔍 Filters:</span>
         
         <div style="display: flex; flex-direction: column; gap: 4px;">
           <label style="font-size: 0.65rem; font-weight: 700; text-transform: uppercase; color: var(--muted);">Scanner Device</label>
-          <select id="filter-log-device" style="background: rgba(255,255,255,0.06); border: 1px solid var(--border); border-radius: 6px; padding: 5px 10px; font-family: var(--font); font-size: 0.78rem; color: var(--text); outline: none; min-width: 140px; cursor: pointer;">
+          <select id="filter-log-device" style="background: var(--input-bg); border: 1px solid var(--border); border-radius: 6px; padding: 5px 10px; font-family: var(--font); font-size: 0.78rem; color: var(--text); outline: none; min-width: 140px; cursor: pointer;">
             <option value="">All Devices</option>
           </select>
         </div>
 
         <div style="display: flex; flex-direction: column; gap: 4px;">
           <label style="font-size: 0.65rem; font-weight: 700; text-transform: uppercase; color: var(--muted);">Scan Count</label>
-          <select id="filter-log-type" style="background: rgba(255,255,255,0.06); border: 1px solid var(--border); border-radius: 6px; padding: 5px 10px; font-family: var(--font); font-size: 0.78rem; color: var(--text); outline: none; min-width: 140px; cursor: pointer;">
+          <select id="filter-log-type" style="background: var(--input-bg); border: 1px solid var(--border); border-radius: 6px; padding: 5px 10px; font-family: var(--font); font-size: 0.78rem; color: var(--text); outline: none; min-width: 140px; cursor: pointer;">
             <option value="">All Scans</option>
             <option value="unique">Unique Check-ins Only</option>
             <option value="duplicate">Duplicate Scans Only</option>
@@ -857,7 +916,7 @@
 
         <div style="display: flex; flex-direction: column; gap: 4px;">
           <label style="font-size: 0.65rem; font-weight: 700; text-transform: uppercase; color: var(--muted);">Time Window</label>
-          <select id="filter-log-time" style="background: rgba(255,255,255,0.06); border: 1px solid var(--border); border-radius: 6px; padding: 5px 10px; font-family: var(--font); font-size: 0.78rem; color: var(--text); outline: none; min-width: 140px; cursor: pointer;">
+          <select id="filter-log-time" style="background: var(--input-bg); border: 1px solid var(--border); border-radius: 6px; padding: 5px 10px; font-family: var(--font); font-size: 0.78rem; color: var(--text); outline: none; min-width: 140px; cursor: pointer;">
             <option value="">All Time</option>
             <option value="5">Last 5 Minutes</option>
             <option value="15">Last 15 Minutes</option>
@@ -865,7 +924,7 @@
           </select>
         </div>
         
-        <button id="reset-log-filters" style="background: transparent; border: 1px solid var(--border); border-radius: 6px; padding: 6px 12px; font-family: var(--font); font-size: 0.75rem; font-weight: 700; color: var(--muted); cursor: pointer; transition: all 0.2s; margin-top: 14px;" onmouseover="this.style.borderColor='rgba(255,255,255,0.25)'; this.style.color='var(--text)'" onmouseout="this.style.borderColor='var(--border)'; this.style.color='var(--muted)'">Reset Filters</button>
+        <button id="reset-log-filters" style="background: transparent; border: 1px solid var(--border); border-radius: 6px; padding: 6px 12px; font-family: var(--font); font-size: 0.75rem; font-weight: 700; color: var(--muted); cursor: pointer; transition: all 0.2s; margin-top: 14px;" onmouseover="this.style.borderColor='var(--btn-csv-border-hover)'; this.style.color='var(--text)'" onmouseout="this.style.borderColor='var(--border)'; this.style.color='var(--muted)'">Reset Filters</button>
       </div>
 
       <table id="csv-table" class="display" style="width:100%">
@@ -888,12 +947,12 @@
       <div class="panel-title">Registered Attendee List</div>
       
       <!-- Advanced Filters for Registry -->
-      <div style="display: flex; gap: 14px; margin-bottom: 20px; padding: 14px; background: rgba(255,255,255,0.02); border: 1px solid var(--border); border-radius: 10px; align-items: center; flex-wrap: wrap;">
+      <div style="display: flex; gap: 14px; margin-bottom: 20px; padding: 14px; background: var(--btn-csv-bg); border: 1px solid var(--border); border-radius: 10px; align-items: center; flex-wrap: wrap;">
         <span style="font-size: 0.75rem; font-weight: 700; text-transform: uppercase; color: var(--muted); letter-spacing: 0.05em;">🔍 Filters:</span>
         
         <div style="display: flex; flex-direction: column; gap: 4px;">
           <label style="font-size: 0.65rem; font-weight: 700; text-transform: uppercase; color: var(--muted);">Check-In Status</label>
-          <select id="filter-reg-status" style="background: rgba(255,255,255,0.06); border: 1px solid var(--border); border-radius: 6px; padding: 5px 10px; font-family: var(--font); font-size: 0.78rem; color: var(--text); outline: none; min-width: 160px; cursor: pointer;">
+          <select id="filter-reg-status" style="background: var(--input-bg); border: 1px solid var(--border); border-radius: 6px; padding: 5px 10px; font-family: var(--font); font-size: 0.78rem; color: var(--text); outline: none; min-width: 160px; cursor: pointer;">
             <option value="">All Registrations</option>
             <option value="scanned">Checked In Only</option>
             <option value="not-scanned">Not Checked In Only</option>
@@ -1700,6 +1759,16 @@
       grid.appendChild(card);
     });
   });
+
+  // ── Theme Toggle Logic ────────────────────────────────────────────────────
+  const themeToggle = document.getElementById('btn-theme-toggle');
+  if (themeToggle) {
+    themeToggle.addEventListener('click', () => {
+      document.body.classList.toggle('light-mode');
+      const activeTheme = document.body.classList.contains('light-mode') ? 'light' : 'dark';
+      localStorage.setItem('theme', activeTheme);
+    });
+  }
 
   // ── Connection status ─────────────────────────────────────────────────────
   socket.on('disconnect', () => setStatus('Connection lost — reconnecting…', 'err'));
