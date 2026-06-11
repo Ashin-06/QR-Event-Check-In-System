@@ -275,6 +275,33 @@ def load_active_event() -> None:
     excel_path = get_excel_file()
     log_path = get_log_file()
     
+    # Clean up any leftover temporary files in the event folder
+    try:
+        event_path = get_active_event_path()
+        if os.path.exists(event_path):
+            for f in os.listdir(event_path):
+                if f.startswith("tmp") and f.endswith(".xlsx"):
+                    try:
+                        os.unlink(os.path.join(event_path, f))
+                    except OSError:
+                        pass
+    except Exception as e:
+        print(f"[load_active_event] Error cleaning leftover temp files: {e}")
+
+    # Look for registrations.csv first and convert to registrations.xlsx (always take precedence if CSV exists)
+    csv_path = os.path.join(get_active_event_path(), "registrations.csv")
+    if os.path.exists(csv_path):
+        try:
+            print(f"[load_active_event] Found registrations.csv. Converting to registrations.xlsx...")
+            df = pd.read_csv(csv_path)
+            df.to_excel(excel_path, index=False, engine="openpyxl")
+            try:
+                os.remove(csv_path)
+            except OSError:
+                pass
+        except Exception as e:
+            print(f"[load_active_event] Error converting registrations.csv to Excel: {e}")
+
     # Ensure registrations file exists
     if not os.path.exists(excel_path):
         # Create a default blank registrations sheet
@@ -295,6 +322,18 @@ def load_active_event() -> None:
             wb.save(excel_path)
             wb.close()
             
+    # Auto-initialize and self-heal registrations metadata if it exists
+    if os.path.exists(excel_path):
+        try:
+            wb = load_workbook(excel_path)
+            ws = wb.active
+            if _initialize_missing_metadata(ws):
+                _atomic_save(wb, excel_path)
+            else:
+                wb.close()
+        except Exception as e:
+            print(f"[load_active_event] Error self-healing Excel metadata: {e}")
+
     # Ensure scanned log exists
     if not os.path.exists(log_path):
         df = pd.DataFrame(columns=["QR Data", "Scan Count", "Timestamps", "Devices"])
@@ -320,14 +359,14 @@ def _rebuild_highlighted() -> None:
     """
     import tempfile
     wb = None
+    staging = None
     excel_file = get_excel_file()
     highlighted_file = get_highlighted_file()
     try:
         with highlight_lock:
-            # Copy source to a temp file (very brief lock)
-            dir_ = os.path.dirname(excel_file)
+            # Copy source to a temp file in system temp (very brief lock)
             with lock:
-                with tempfile.NamedTemporaryFile(dir=dir_, suffix=".xlsx", delete=False) as tmp:
+                with tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False) as tmp:
                     staging = tmp.name
                 shutil.copy(excel_file, staging)
 
@@ -353,12 +392,6 @@ def _rebuild_highlighted() -> None:
             _atomic_save(wb, highlighted_file)
             wb = None
 
-            # Clean up staging temp
-            try:
-                os.unlink(staging)
-            except OSError:
-                pass
-
     except Exception as e:
         print(f"[highlight] Error: {e}")
     finally:
@@ -367,8 +400,20 @@ def _rebuild_highlighted() -> None:
                 wb.close()
             except Exception:
                 pass
+        if staging and os.path.exists(staging):
+            try:
+                os.unlink(staging)
+            except OSError:
+                pass
 
-load_active_event()
+
+def _clean_val(val, default="") -> str:
+    if pd.isna(val) or val is None:
+        return default
+    s = str(val).strip()
+    if s.lower() == "nan":
+        return default
+    return s
 
 
 # ── Helper: normalise column header lookup ─────────────────────────────────────
@@ -470,7 +515,8 @@ def _on_rename_device(data):
 # ── Routes ─────────────────────────────────────────────────────────────────────
 @app.route("/")
 def index():
-    return render_template("index.html")
+    is_admin = is_localhost_request() or session.get("dashboard_authorized") == True
+    return render_template("index.html", is_admin=is_admin)
 
 
 @app.route("/dashboard")
@@ -536,6 +582,34 @@ def network_info():
     return jsonify(url=f"http://{ip}:{port}", ip=ip, port=port)
 
 
+def _get_qr_to_attendee_map() -> dict[str, dict]:
+    excel_file = get_excel_file()
+    mapping = {}
+    if not os.path.exists(excel_file):
+        return mapping
+    try:
+        with lock:
+            wb = load_workbook(excel_file, read_only=True)
+            ws = wb.active
+            hdrs = _get_headers(ws)
+            name_idx = hdrs.get("name")
+            reg_idx = hdrs.get("registration number")
+            qr_idx = hdrs.get("qr")
+            if name_idx and reg_idx and qr_idx:
+                for row in ws.iter_rows(min_row=2, values_only=True):
+                    if len(row) >= max(name_idx, reg_idx, qr_idx):
+                        qr_val = str(row[qr_idx - 1] or "").strip()
+                        if qr_val:
+                            mapping[qr_val] = {
+                                "name": str(row[name_idx - 1] or "").strip(),
+                                "reg_no": str(row[reg_idx - 1] or "").strip()
+                            }
+            wb.close()
+    except Exception as e:
+        print(f"Error building QR mapping: {e}")
+    return mapping
+
+
 @app.route("/data_csv")
 def data_csv():
     with lock:
@@ -550,7 +624,36 @@ def data_csv():
     df["Last Device"] = df["Devices"].apply(
         lambda s: s.split(";")[-1].strip() if s else ""
     )
-    records = df[["QR Data", "Scan Count", "Last Timestamp", "Timestamps", "Devices", "Last Device"]].to_dict(orient="records")
+    
+    # Map QR Data to Attendee Details
+    qr_map = _get_qr_to_attendee_map()
+    
+    records = []
+    for idx, row in df.iterrows():
+        qr_val = str(row["QR Data"]).strip()
+        att = qr_map.get(qr_val)
+        if not att:
+            # Fallback parse for old verbose formats
+            name_match = re.search(r"Name:\s*([^\n\r]+)", qr_val)
+            reg_match = re.search(r"(Reg No|Reg_No|Registration Number|ID):\s*([^\n\r]+)", qr_val)
+            if name_match:
+                att = {
+                    "name": name_match.group(1).strip(),
+                    "reg_no": reg_match.group(2).strip() if reg_match else "Unknown"
+                }
+            else:
+                att = {"name": qr_val, "reg_no": "Unknown"}
+                
+        records.append({
+            "QR Data": qr_val,
+            "attendee_name": att["name"],
+            "reg_no": att["reg_no"],
+            "Scan Count": int(row["Scan Count"]),
+            "Last Timestamp": row["Last Timestamp"],
+            "Timestamps": row["Timestamps"],
+            "Devices": row["Devices"],
+            "Last Device": row["Last Device"]
+        })
     return jsonify(records)
 
 
@@ -675,7 +778,7 @@ def _perform_checkin(qr_data: str, device_id: str = "unknown") -> tuple[dict, in
             hdrs, _ = _get_or_create_headers(ws)
             scan_key = SCAN_COL_NAME.lower()
 
-            required = {"name", "email address", "registration number", "qr"}
+            required = {"name", "registration number", "qr"}
             missing  = required - hdrs.keys()
             if missing:
                 return {
@@ -688,7 +791,13 @@ def _perform_checkin(qr_data: str, device_id: str = "unknown") -> tuple[dict, in
             for row in ws.iter_rows(min_row=2):
                 qrval = str(row[hdrs["qr"] - 1].value or "").strip()
                 qrval_norm = qrval.replace("\r\n", "\n").strip()
-                if qrval_norm == qr_data_norm:
+                regval = str(row[hdrs["registration number"] - 1].value or "").strip()
+                regval_norm = regval.replace("\r\n", "\n").strip()
+                uidval = str(row[hdrs["unique id"] - 1].value or "").strip()
+                uidval_norm = uidval.replace("\r\n", "\n").strip()
+                
+                # Check for match on QR string, registration number, or unique ID
+                if qr_data_norm in [qrval_norm, regval_norm, uidval_norm]:
                     found_row = row
                     break
 
@@ -708,16 +817,20 @@ def _perform_checkin(qr_data: str, device_id: str = "unknown") -> tuple[dict, in
             col = hdrs[scan_key]
             curr = ws.cell(row=r, column=col).value or ""
             curr_str = str(curr).strip().lower()
-            if curr_str == "scanned":
-                cnt = 1
-            else:
+            if curr_str == "scanned" or curr_str == "manual check-in" or "scanned" in curr_str or "manual" in curr_str:
                 m = re.search(r"(\d+)", curr_str)
-                cnt = int(m.group(1)) if m else 0
+                cnt = int(m.group(1)) if m else 1
+            else:
+                cnt = 0
             cnt += 1
-            new_status = "Scanned" if cnt == 1 else f"Scanned {cnt} Times"
+            
+            if device_id == "Manual Check-In":
+                new_status = "Manual Check-In" if cnt == 1 else f"Manual Check-In {cnt} Times"
+            else:
+                new_status = "Scanned" if cnt == 1 else f"Scanned {cnt} Times"
             ws.cell(row=r, column=col, value=new_status)
 
-            device_name = "unknown"
+            device_name = device_id
             with _devices_lock:
                 if device_id in connected_devices:
                     device_name = connected_devices[device_id]["name"]
@@ -747,9 +860,11 @@ def _perform_checkin(qr_data: str, device_id: str = "unknown") -> tuple[dict, in
                 if c_low not in system_cols:
                     custom_fields[ws.cell(row=1, column=c_idx).value] = str(found_row[c_idx - 1].value or "").strip()
 
+            email_val = str(found_row[hdrs["email address"] - 1].value or "").strip() if "email address" in hdrs else ""
+
             details = {
                 "Name":                str(found_row[hdrs["name"] - 1].value or "").strip(),
-                "Email":               str(found_row[hdrs["email address"] - 1].value or "").strip(),
+                "Email":               email_val,
                 "Registration Number": str(found_row[hdrs["registration number"] - 1].value or "").strip(),
                 "Phone":               phone_val,
                 "Status":              new_status,
@@ -887,11 +1002,10 @@ def manual_checkin():
 
     payload = request.json or {}
     qr_data = payload.get("qr_data", "").strip()
-    device_id = payload.get("device_id", "unknown").strip()
     if not qr_data:
         return jsonify(message="No QR data provided."), 400
 
-    res, code = _perform_checkin(qr_data, device_id)
+    res, code = _perform_checkin(qr_data, device_id="Manual Check-In")
     return jsonify(res), code
 
 
@@ -909,7 +1023,7 @@ def get_registry():
         df_xl.columns = df_xl.columns.astype(str).str.strip()
         col_map = {c.lower(): c for c in df_xl.columns}
 
-        required = {"name", "email address", "registration number", "qr"}
+        required = {"name", "registration number", "qr"}
         missing  = required - col_map.keys()
         if missing:
             return jsonify(message=f"Excel is missing columns: {missing}"), 500
@@ -921,14 +1035,15 @@ def get_registry():
 
         records = []
         for _, row in df_xl.iterrows():
-            name_v   = str(row.get(col_map["name"], "") or "").strip()
-            email_v  = str(row.get(col_map["email address"], "") or "").strip()
-            reg_v    = str(row.get(col_map["registration number"], "") or "").strip()
-            qr_v     = str(row.get(col_map["qr"], "") or "").strip()
-            status_v = str(row.get(scan_col_orig, "") or "").strip() if scan_col_orig else ""
-            phone_v  = str(row.get(phone_col_orig, "") or "").strip() if phone_col_orig else ""
-            email_s  = str(row.get(email_sent_col, "") or "").strip() if email_sent_col else ""
-            wa_s     = str(row.get(wa_sent_col, "") or "").strip() if wa_sent_col else ""
+            name_v   = _clean_val(row.get(col_map["name"]))
+            reg_v    = _clean_val(row.get(col_map["registration number"]))
+            qr_v     = _clean_val(row.get(col_map["qr"]))
+            status_v = _clean_val(row.get(scan_col_orig), default="Not Scanned") if scan_col_orig else "Not Scanned"
+            
+            email_v  = _clean_val(row.get(col_map["email address"])) if "email address" in col_map else ""
+            phone_v  = _clean_val(row.get(phone_col_orig)) if phone_col_orig else ""
+            email_s  = _clean_val(row.get(email_sent_col), default="Not Sent") if email_sent_col else "Not Sent"
+            wa_s     = _clean_val(row.get(wa_sent_col), default="Not Sent") if wa_sent_col else "Not Sent"
 
             if not any([name_v, email_v, reg_v, qr_v]):
                 continue
@@ -943,17 +1058,17 @@ def get_registry():
             ]
             for c_low, c_orig in col_map.items():
                 if c_low not in system_cols:
-                    custom_fields[c_orig] = str(row.get(c_orig, "") or "").strip()
+                    custom_fields[c_orig] = _clean_val(row.get(c_orig))
 
             records.append({
                 "name":   name_v,
                 "email":  email_v,
                 "reg_no": reg_v,
                 "qr":     qr_v,
-                "status": status_v or "Not Scanned",
+                "status": status_v,
                 "phone":  phone_v,
-                "email_sent": email_s or "Not Sent",
-                "wa_sent": wa_s or "Not Sent",
+                "email_sent": email_s,
+                "wa_sent": wa_s,
                 "custom_fields": custom_fields
             })
 
@@ -984,6 +1099,179 @@ def active_event_columns():
         return jsonify(columns=custom_cols)
     except Exception as e:
         return jsonify(message=str(e)), 500
+
+
+@app.route("/active_event_form_fields")
+def active_event_form_fields():
+    try:
+        excel_file = get_excel_file()
+        if not os.path.exists(excel_file):
+            return jsonify(fields=[])
+            
+        with lock:
+            wb = load_workbook(excel_file, read_only=True)
+            ws = wb.active
+            headers = [cell.value for cell in ws[1] if cell.value]
+            wb.close()
+            
+        system_cols = {
+            "unique id", "qr", "barcode", SCAN_COL_NAME.lower(),
+            "email sent status", "whatsapp sent status",
+            "qr code image", "barcode image", "scan timestamps", "scan devices"
+        }
+        
+        fields = []
+        for h in headers:
+            h_clean = str(h).strip()
+            h_low = h_clean.lower()
+            if h_low not in system_cols:
+                is_required = h_low in ["name", "registration number"]
+                fields.append({
+                    "name": h_clean,
+                    "key": h_low,
+                    "required": is_required
+                })
+        return jsonify(fields=fields)
+    except Exception as e:
+        return jsonify(message=str(e)), 500
+
+
+@app.route("/clean_duplicates", methods=["POST"])
+def clean_duplicates():
+    excel_file = get_excel_file()
+    if not os.path.exists(excel_file):
+        return jsonify(message="No registrations spreadsheet found."), 404
+        
+    wb = None
+    try:
+        with lock:
+            wb = load_workbook(excel_file)
+            ws = wb.active
+            hdrs, _ = _get_or_create_headers(ws)
+            
+            reg_col = hdrs.get("registration number")
+            if not reg_col:
+                wb.close()
+                return jsonify(message="Registration Number column is missing."), 400
+                
+            seen_regs = set()
+            rows_to_delete = []
+            
+            # Identify duplicates from bottom to top
+            for r in range(2, ws.max_row + 1):
+                reg_val = ws.cell(row=r, column=reg_col).value
+                reg_str = str(reg_val).strip().lower() if reg_val else ""
+                
+                if not reg_str:
+                    continue
+                    
+                if reg_str in seen_regs:
+                    rows_to_delete.append(r)
+                else:
+                    seen_regs.add(reg_str)
+            
+            removed_cnt = len(rows_to_delete)
+            for r in sorted(rows_to_delete, reverse=True):
+                # Clean up images for this row and shift lower ones up
+                images_to_keep = []
+                for img in ws._images:
+                    row_num = None
+                    if hasattr(img, 'anchor'):
+                        if hasattr(img.anchor, '_from') and hasattr(img.anchor._from, 'row'):
+                            row_num = img.anchor._from.row + 1
+                        elif isinstance(img.anchor, str):
+                            row_num = int(''.join(filter(str.isdigit, img.anchor))) if any(c.isdigit() for c in img.anchor) else None
+                    
+                    if row_num == r:
+                        # Skip this image (deletes it)
+                        continue
+                    elif row_num is not None and row_num > r:
+                        # Shift up
+                        if hasattr(img.anchor, '_from') and hasattr(img.anchor._from, 'row'):
+                            img.anchor._from.row -= 1
+                        elif isinstance(img.anchor, str):
+                            col_letters = ''.join(filter(str.isalpha, img.anchor))
+                            img.anchor = f"{col_letters}{row_num - 1}"
+                    images_to_keep.append(img)
+                ws._images = images_to_keep
+                
+                # Delete the row
+                ws.delete_rows(r)
+                
+            if removed_cnt > 0:
+                _atomic_save(wb, excel_file)
+            else:
+                wb.close()
+                
+            wb = None
+            
+        if removed_cnt > 0:
+            threading.Thread(target=_rebuild_highlighted, daemon=True).start()
+            socketio.emit("registry_updated", {})
+            _emit_stats()
+            
+        return jsonify(message=f"Cleaned {removed_cnt} duplicate rows successfully.", cleaned=removed_cnt), 200
+        
+    except Exception as e:
+        return jsonify(message=f"Error cleaning duplicates: {str(e)}"), 500
+    finally:
+        if wb:
+            try:
+                wb.close()
+            except Exception:
+                pass
+
+
+@app.route("/regenerate_assets", methods=["POST"])
+def regenerate_assets():
+    excel_file = get_excel_file()
+    if not os.path.exists(excel_file):
+        return jsonify(message="No registrations spreadsheet found."), 404
+        
+    wb = None
+    try:
+        with lock:
+            wb = load_workbook(excel_file)
+            ws = wb.active
+            hdrs, _ = _get_or_create_headers(ws)
+            
+            # Clear all existing images from the sheet to regenerate them cleanly
+            ws._images = []
+            
+            # Now run self-healing/generation for every row
+            for r in range(2, ws.max_row + 1):
+                name_val = ws.cell(row=r, column=hdrs["name"]).value
+                reg_val = ws.cell(row=r, column=hdrs["registration number"]).value
+                if not name_val or not reg_val:
+                    continue
+                reg_str = str(reg_val).strip()
+                
+                # Re-generate QR
+                qr_path = os.path.join(get_qr_dir(), f"{reg_str}.png")
+                _generate_qr_for_guest(reg_str, reg_str)
+                _embed_qr_image(ws, r, qr_path, hdrs["qr code image"])
+                
+                # Re-generate Barcode
+                bc_path = os.path.join(get_barcode_dir(), f"{reg_str}.png")
+                _generate_barcode_for_guest(reg_str)
+                _embed_barcode_image(ws, r, bc_path, hdrs["barcode image"])
+                
+            _atomic_save(wb, excel_file)
+            wb = None
+            
+        threading.Thread(target=_rebuild_highlighted, daemon=True).start()
+        socketio.emit("registry_updated", {})
+        
+        return jsonify(message="Successfully regenerated and re-embedded all QR codes and barcodes."), 200
+        
+    except Exception as e:
+        return jsonify(message=f"Error regenerating assets: {str(e)}"), 500
+    finally:
+        if wb:
+            try:
+                wb.close()
+            except Exception:
+                pass
 
 
 @app.route("/events", methods=["GET"])
@@ -1118,8 +1406,8 @@ def _run_tunnel():
     import re
     
     print("[tunnel] Starting localhost.run SSH tunnel loop...")
-    # Add ServerAlive keepalives to prevent disconnect drops
-    cmd = ["ssh", "-o", "ServerAliveInterval=30", "-o", "ServerAliveCountMax=3", "-R", "80:localhost:5001", "nokey@localhost.run"]
+    # Add ServerAlive keepalives to prevent disconnect drops and bypass interactive prompt
+    cmd = ["ssh", "-o", "StrictHostKeyChecking=no", "-o", "UserKnownHostsFile=NUL" if os.name == "nt" else "/dev/null", "-o", "ServerAliveInterval=30", "-o", "ServerAliveCountMax=3", "-R", "80:localhost:5001", "nokey@localhost.run"]
     
     url_pattern = re.compile(r"https?://[a-zA-Z0-9.-]+\.lhr\.(?:life|link|run|tunnel)")
     lhrtunnel_pattern = re.compile(r"https?://[a-zA-Z0-9.-]+\.lhrtunnel\.link")
@@ -1207,24 +1495,57 @@ def tunnel_status():
 
 def _get_or_create_headers(ws) -> tuple[dict[str, int], bool]:
     hdrs = _get_headers(ws)
+    modified = False
+    
+    # Define aliases mapping: target_lowercase -> list of lowercase aliases
+    aliases = {
+        "name": ["name", "fullname", "full name", "attendee name", "visitor name", "guest name"],
+        "registration number": ["registration number", "reg number", "reg no", "registration no", "reg_no", "registration_number", "id", "ticket number", "ticket no", "regid"],
+        "email address": ["email address", "email", "mail", "email_address"],
+        "phone number": ["phone number", "phone", "mobile", "whatsapp", "contact", "phone_number", "contact number", "contact no"],
+        "qr": ["qr", "qr code", "qr_code", "qr value", "qr_value"],
+        "barcode": ["barcode", "barcode value", "barcode_value"]
+    }
+    
+    # For each target, if it is not in hdrs, see if any alias is in hdrs
+    for target, alias_list in aliases.items():
+        if target not in hdrs:
+            for alias in alias_list:
+                if alias in hdrs:
+                    col_idx = hdrs[alias]
+                    standard_names = {
+                        "name": "Name",
+                        "registration number": "Registration Number",
+                        "email address": "Email Address",
+                        "phone number": "Phone Number",
+                        "qr": "QR",
+                        "barcode": "Barcode"
+                    }
+                    ws.cell(row=1, column=col_idx, value=standard_names[target])
+                    hdrs[target] = col_idx
+                    del hdrs[alias]
+                    modified = True
+                    break
+                    
+    # Now define standard expected columns and their nice names
     expected = {
         "name": "Name",
-        "email address": "Email Address",
         "registration number": "Registration Number",
-        "phone number": "Phone Number",
         "unique id": "Unique ID",
         "qr": "QR",
         "barcode": "Barcode",
         SCAN_COL_NAME.lower(): SCAN_COL_NAME,
-        "email sent status": "Email Sent Status",
-        "whatsapp sent status": "WhatsApp Sent Status",
         "scan timestamps": "Scan Timestamps",
         "scan devices": "Scan Devices",
         "qr code image": "QR Code Image",
         "barcode image": "Barcode Image"
     }
     
-    modified = False
+    if "email address" in hdrs:
+        expected["email sent status"] = "Email Sent Status"
+    if "phone number" in hdrs:
+        expected["whatsapp sent status"] = "WhatsApp Sent Status"
+        
     for key, val in expected.items():
         if key not in hdrs:
             col = ws.max_column + 1
@@ -1235,18 +1556,111 @@ def _get_or_create_headers(ws) -> tuple[dict[str, int], bool]:
     return hdrs, modified
 
 
-def _generate_qr_for_guest(name, email, reg_no, uid) -> str:
-    qr_str = (
-        f"Name: {name.strip()}\n"
-        f"Email: {email.strip()}\n"
-        f"Reg No: {reg_no.strip()}\n"
-        f"ID: {uid.strip()}"
-    )
+def _has_image_at_cell(ws, row: int, col: int) -> bool:
+    """Check if there is already an image anchored to the given row and column (1-indexed)."""
+    for img in ws._images:
+        row_num = None
+        col_num = None
+        if hasattr(img, 'anchor'):
+            if hasattr(img.anchor, '_from') and hasattr(img.anchor._from, 'row'):
+                row_num = img.anchor._from.row + 1
+                col_num = img.anchor._from.col + 1
+            elif isinstance(img.anchor, str):
+                try:
+                    # Parse coord like 'F2' -> row=2, col=6
+                    cell = ws[img.anchor]
+                    row_num = cell.row
+                    row_col = cell.column
+                except Exception:
+                    pass
+        if row_num == row and col_num == col:
+            return True
+    return False
+
+
+def _initialize_missing_metadata(ws) -> bool:
+    hdrs, modified = _get_or_create_headers(ws)
     
+    # Check if there are any rows
+    if ws.max_row < 2:
+        return modified
+        
+    existing_uids = set()
+    for r in range(2, ws.max_row + 1):
+        uid_val = ws.cell(row=r, column=hdrs["unique id"]).value
+        if uid_val:
+            existing_uids.add(str(uid_val).strip().upper())
+            
+    row_modified = False
+    for r in range(2, ws.max_row + 1):
+        name_val = ws.cell(row=r, column=hdrs["name"]).value
+        reg_val = ws.cell(row=r, column=hdrs["registration number"]).value
+        if not name_val or not reg_val:
+            continue
+            
+        reg_str = str(reg_val).strip()
+        
+        # 1) Unique ID
+        uid_cell = ws.cell(row=r, column=hdrs["unique id"])
+        if not uid_cell.value:
+            uid = _generate_unique_id(existing_uids)
+            uid_cell.value = uid
+            existing_uids.add(uid)
+            row_modified = True
+            
+        # 2) QR value
+        qr_cell = ws.cell(row=r, column=hdrs["qr"])
+        if not qr_cell.value:
+            qr_cell.value = reg_str
+            row_modified = True
+            
+        # 3) Barcode value
+        bc_cell = ws.cell(row=r, column=hdrs["barcode"])
+        if not bc_cell.value:
+            bc_cell.value = reg_str
+            row_modified = True
+            
+        # 4) Scanned Status
+        status_cell = ws.cell(row=r, column=hdrs[SCAN_COL_NAME.lower()])
+        if status_cell.value is None:
+            status_cell.value = ""
+            row_modified = True
+            
+        # 5) Email Sent Status
+        if "email sent status" in hdrs:
+            esc_cell = ws.cell(row=r, column=hdrs["email sent status"])
+            if esc_cell.value is None:
+                esc_cell.value = "Not Sent"
+                row_modified = True
+                
+        # 6) WhatsApp Sent Status
+        if "whatsapp sent status" in hdrs:
+            wsc_cell = ws.cell(row=r, column=hdrs["whatsapp sent status"])
+            if wsc_cell.value is None:
+                wsc_cell.value = "Not Sent"
+                row_modified = True
+                
+        # 7) QR Image
+        qr_path = os.path.join(get_qr_dir(), f"{reg_str}.png")
+        if not os.path.exists(qr_path) or not _has_image_at_cell(ws, r, hdrs["qr code image"]):
+            _generate_qr_for_guest(reg_str, reg_str)
+            _embed_qr_image(ws, r, qr_path, hdrs["qr code image"])
+            row_modified = True
+            
+        # 8) Barcode Image
+        bc_path = os.path.join(get_barcode_dir(), f"{reg_str}.png")
+        if not os.path.exists(bc_path) or not _has_image_at_cell(ws, r, hdrs["barcode image"]):
+            _generate_barcode_for_guest(reg_str)
+            _embed_barcode_image(ws, r, bc_path, hdrs["barcode image"])
+            row_modified = True
+            
+    return modified or row_modified
+
+
+def _generate_qr_for_guest(content_str: str, reg_no: str) -> str:
     qr_dir = get_qr_dir()
     qr_path = os.path.join(qr_dir, f"{reg_no.strip()}.png")
-    
-    qr_img = qrcode.make(qr_str)
+    qr_img = qrcode.make(content_str.strip())
     qr_img.save(qr_path)
     return qr_path
 
@@ -1275,6 +1689,7 @@ def _embed_qr_image(ws, r: int, qr_path: str, col_idx: int) -> None:
     cell_addr = f"{get_column_letter(col_idx)}{r}"
     ws.add_image(xl_img, cell_addr)
     ws.row_dimensions[r].height = 80
+    ws.cell(row=r, column=col_idx, value="Embedded")
 
 
 def _embed_barcode_image(ws, r: int, barcode_path: str, col_idx: int) -> None:
@@ -1286,6 +1701,7 @@ def _embed_barcode_image(ws, r: int, barcode_path: str, col_idx: int) -> None:
     cell_addr = f"{get_column_letter(col_idx)}{r}"
     ws.add_image(xl_img, cell_addr)
     ws.row_dimensions[r].height = 80
+    ws.cell(row=r, column=col_idx, value="Embedded")
 
 
 def _generate_unique_id(existing_ids: set[str], length: int = 8) -> str:
@@ -1317,8 +1733,8 @@ def add_attendee():
     reg_no = payload.get("reg_no", "").strip()
     phone = payload.get("phone", "").strip()
     
-    if not name or not email or not reg_no:
-        return jsonify(message="Name, email, and reg_no are required."), 400
+    if not name or not reg_no:
+        return jsonify(message="Name and Registration Number are required."), 400
         
     excel_file = get_excel_file()
     wb = None
@@ -1342,26 +1758,25 @@ def add_attendee():
                     existing_uids.add(str(cell_val).strip().upper())
                     
             uid = _generate_unique_id(existing_uids)
-            qr_path = _generate_qr_for_guest(name, email, reg_no, uid)
+            qr_str = reg_no
+            qr_path = _generate_qr_for_guest(qr_str, reg_no)
             barcode_path = _generate_barcode_for_guest(reg_no)
-            qr_str = (
-                f"Name: {name}\n"
-                f"Email: {email}\n"
-                f"Reg No: {reg_no}\n"
-                f"ID: {uid}"
-            )
             
             new_r = ws.max_row + 1
             ws.cell(row=new_r, column=hdrs["name"], value=name)
-            ws.cell(row=new_r, column=hdrs["email address"], value=email)
+            if "email address" in hdrs:
+                ws.cell(row=new_r, column=hdrs["email address"], value=email)
             ws.cell(row=new_r, column=hdrs["registration number"], value=reg_no)
-            ws.cell(row=new_r, column=hdrs["phone number"], value=phone)
+            if "phone number" in hdrs:
+                ws.cell(row=new_r, column=hdrs["phone number"], value=phone)
             ws.cell(row=new_r, column=hdrs["unique id"], value=uid)
             ws.cell(row=new_r, column=hdrs["qr"], value=qr_str)
             ws.cell(row=new_r, column=hdrs["barcode"], value=reg_no)
             ws.cell(row=new_r, column=hdrs[SCAN_COL_NAME.lower()], value="")
-            ws.cell(row=new_r, column=hdrs["email sent status"], value="Not Sent")
-            ws.cell(row=new_r, column=hdrs["whatsapp sent status"], value="Not Sent")
+            if "email sent status" in hdrs:
+                ws.cell(row=new_r, column=hdrs["email sent status"], value="Not Sent")
+            if "whatsapp sent status" in hdrs:
+                ws.cell(row=new_r, column=hdrs["whatsapp sent status"], value="Not Sent")
             
             # Custom fields dynamic storage
             custom_payload = payload.get("custom_fields", {})
@@ -1407,18 +1822,38 @@ def _perform_bulk_import(rows, mode, auto_resolve) -> tuple[dict, int]:
                 ws = wb.active
                 ws.delete_rows(1, ws.max_row + 1)
                 
-                headers = [
-                    "Name", "Email Address", "Registration Number", "Phone Number",
-                    "Unique ID", "QR", "Barcode", SCAN_COL_NAME, "Email Sent Status", "WhatsApp Sent Status",
-                    "Scan Timestamps", "Scan Devices", "QR Code Image", "Barcode Image"
-                ]
+                # We start with the core headers
+                headers = ["Name", "Registration Number", "Unique ID", "QR", "Barcode", SCAN_COL_NAME]
+                
+                has_email = False
+                has_phone = False
+                if rows:
+                    for r_item in rows:
+                        for key in r_item.keys():
+                            key_clean = key.lower().strip()
+                            if "email" in key_clean:
+                                has_email = True
+                            elif "phone" in key_clean or "whatsapp" in key_clean or "contact" in key_clean:
+                                has_phone = True
+                
+                if has_email:
+                    headers.extend(["Email Address", "Email Sent Status"])
+                if has_phone:
+                    headers.extend(["Phone Number", "WhatsApp Sent Status"])
+                    
+                headers.extend(["Scan Timestamps", "Scan Devices", "QR Code Image", "Barcode Image"])
                 
                 # Dynamic custom columns from rows
                 custom_cols = []
+                system_names_low = {
+                    "name", "registration number", "unique id", "qr", "barcode",
+                    "scan timestamps", "scan devices", "qr code image", "barcode image",
+                    "email address", "email sent status", "phone number", "whatsapp sent status",
+                    "email", "phone", "whatsapp", "contact", SCAN_COL_NAME.lower()
+                }
                 if rows:
                     for key in rows[0].keys():
-                        key_clean = key.lower().strip()
-                        if key_clean not in ["name", "email", "reg_no", "phone"] and key_clean not in [h.lower() for h in headers]:
+                        if key.lower().strip() not in system_names_low:
                             custom_cols.append(key.strip())
                 headers.extend(custom_cols)
                 
@@ -1447,9 +1882,16 @@ def _perform_bulk_import(rows, mode, auto_resolve) -> tuple[dict, int]:
                     for key in rows[0].keys():
                         key_clean = key.lower().strip()
                         if key_clean not in ["name", "email", "reg_no", "phone"] and key_clean not in hdrs:
-                            col = ws.max_column + 1
-                            ws.cell(row=1, column=col, value=key.strip())
-                            hdrs[key_clean] = col
+                            system_names_low = {
+                                "name", "registration number", "unique id", "qr", "barcode",
+                                "scan timestamps", "scan devices", "qr code image", "barcode image",
+                                "email address", "email sent status", "phone number", "whatsapp sent status",
+                                "email", "phone", "whatsapp", "contact", SCAN_COL_NAME.lower()
+                            }
+                            if key_clean not in system_names_low:
+                                col = ws.max_column + 1
+                                ws.cell(row=1, column=col, value=key.strip())
+                                hdrs[key_clean] = col
                 
             # Read existing reg numbers & unique IDs to avoid duplicates
             existing_regs = set()
@@ -1457,7 +1899,7 @@ def _perform_bulk_import(rows, mode, auto_resolve) -> tuple[dict, int]:
             existing_uids = set()
             for r in range(2, ws.max_row + 1):
                 reg_val = ws.cell(row=r, column=hdrs["registration number"]).value
-                email_val = ws.cell(row=r, column=hdrs["email address"]).value
+                email_val = ws.cell(row=r, column=hdrs["email address"]).value if "email address" in hdrs else None
                 uid_val = ws.cell(row=r, column=hdrs["unique id"]).value
                 if reg_val:
                     existing_regs.add(str(reg_val).strip().lower())
@@ -1470,17 +1912,29 @@ def _perform_bulk_import(rows, mode, auto_resolve) -> tuple[dict, int]:
             skipped_cnt = 0
             
             for row in rows:
-                name = str(row.get("name", row.get("Name", ""))).strip()
-                email = str(row.get("email", row.get("Email Address", ""))).strip()
-                reg_no = str(row.get("reg_no", row.get("Registration Number", ""))).strip()
-                phone = str(row.get("phone", row.get("Phone Number", ""))).strip()
+                name = ""
+                email = ""
+                reg_no = ""
+                phone = ""
+                
+                for k, v in row.items():
+                    k_low = k.lower().strip()
+                    if "name" in k_low:
+                        name = str(v or "").strip()
+                    elif "email" in k_low:
+                        email = str(v or "").strip()
+                    elif "reg" in k_low or "number" in k_low or "id" in k_low:
+                        if "phone" not in k_low and "whatsapp" not in k_low:
+                            reg_no = str(v or "").strip()
+                    elif "phone" in k_low or "whatsapp" in k_low or "contact" in k_low:
+                        phone = str(v or "").strip()
                 
                 # Validation check
-                if not name or not email or not reg_no:
+                if not name or not reg_no:
                     skipped_cnt += 1
                     continue
                     
-                # Skip duplicate registration numbers / emails in append mode, 
+                # Skip duplicate registration numbers in append mode, 
                 # unless auto-resolve is enabled
                 if reg_no.lower() in existing_regs:
                     if auto_resolve:
@@ -1494,36 +1948,36 @@ def _perform_bulk_import(rows, mode, auto_resolve) -> tuple[dict, int]:
                         skipped_cnt += 1
                         continue
                         
-                if email.lower() in existing_emails:
+                if email and email.lower() in existing_emails:
                     if not auto_resolve:
                         skipped_cnt += 1
                         continue
                         
                 uid = _generate_unique_id(existing_uids)
                 existing_regs.add(reg_no.lower())
-                existing_emails.add(email.lower())
+                if email:
+                    existing_emails.add(email.lower())
                 existing_uids.add(uid)
                 
-                qr_path = _generate_qr_for_guest(name, email, reg_no, uid)
+                qr_str = reg_no
+                qr_path = _generate_qr_for_guest(qr_str, reg_no)
                 barcode_path = _generate_barcode_for_guest(reg_no)
-                qr_str = (
-                    f"Name: {name}\n"
-                    f"Email: {email}\n"
-                    f"Reg No: {reg_no}\n"
-                    f"ID: {uid}"
-                )
                 
                 new_r = ws.max_row + 1
                 ws.cell(row=new_r, column=hdrs["name"], value=name)
-                ws.cell(row=new_r, column=hdrs["email address"], value=email)
                 ws.cell(row=new_r, column=hdrs["registration number"], value=reg_no)
-                ws.cell(row=new_r, column=hdrs["phone number"], value=phone)
+                if "email address" in hdrs:
+                    ws.cell(row=new_r, column=hdrs["email address"], value=email)
+                if "phone number" in hdrs:
+                    ws.cell(row=new_r, column=hdrs["phone number"], value=phone)
                 ws.cell(row=new_r, column=hdrs["unique id"], value=uid)
                 ws.cell(row=new_r, column=hdrs["qr"], value=qr_str)
                 ws.cell(row=new_r, column=hdrs["barcode"], value=reg_no)
                 ws.cell(row=new_r, column=hdrs[SCAN_COL_NAME.lower()], value="")
-                ws.cell(row=new_r, column=hdrs["email sent status"], value="Not Sent")
-                ws.cell(row=new_r, column=hdrs["whatsapp sent status"], value="Not Sent")
+                if "email sent status" in hdrs:
+                    ws.cell(row=new_r, column=hdrs["email sent status"], value="Not Sent")
+                if "whatsapp sent status" in hdrs:
+                    ws.cell(row=new_r, column=hdrs["whatsapp sent status"], value="Not Sent")
                 
                 # Fill custom columns dynamically
                 for key, val in row.items():
@@ -1633,8 +2087,8 @@ def preview_import():
         elif "phone" in c_low or "whatsapp" in c_low or "contact" in c_low:
             mapping["phone"] = col
             
-    if "name" not in mapping or "email" not in mapping or "reg_no" not in mapping:
-        return jsonify(message="File must contain columns for Name, Email Address, and Registration Number."), 400
+    if "name" not in mapping or "reg_no" not in mapping:
+        return jsonify(message="File must contain columns for Name and Registration Number."), 400
         
     db_regs = set()
     db_emails = set()
@@ -1665,38 +2119,39 @@ def preview_import():
     
     for idx, row in df.iterrows():
         name = str(row.get(mapping["name"], "") or "").strip()
-        email = str(row.get(mapping["email"], "") or "").strip()
+        email = str(row.get(mapping["email"], "") or "").strip() if "email" in mapping else ""
         reg_no = str(row.get(mapping["reg_no"], "") or "").strip()
-        phone = str(row.get(mapping.get("phone", ""), "") or "").strip()
+        phone = str(row.get(mapping.get("phone", ""), "") or "").strip() if "phone" in mapping else ""
         
-        if not name and not email and not reg_no:
+        if not name and not reg_no:
             continue
             
         status = "ok"
         issue = ""
         
-        if not name or not email or not reg_no:
+        if not name or not reg_no:
             status = "missing"
             issue = "Missing critical fields"
         else:
             reg_low = reg_no.lower()
-            email_low = email.lower()
+            email_low = email.lower() if email else ""
             
             if reg_low in db_regs:
                 status = "dup_db_reg"
                 issue = f"Reg no '{reg_no}' already in database"
-            elif email_low in db_emails:
+            elif email_low and email_low in db_emails:
                 status = "dup_db_email"
                 issue = f"Email '{email}' already in database"
             elif reg_low in file_regs:
                 status = "dup_file_reg"
                 issue = f"Duplicate Reg no '{reg_no}' inside file"
-            elif email_low in file_emails:
+            elif email_low and email_low in file_emails:
                 status = "dup_file_email"
                 issue = f"Duplicate Email '{email}' inside file"
                 
             file_regs.add(reg_low)
-            file_emails.add(email_low)
+            if email_low:
+                file_emails.add(email_low)
             
         preview_records.append({
             "name": name,
@@ -1764,6 +2219,7 @@ def _update_sent_status(reg_no: str, channel: str, status: str):
             wb = None
             
         socketio.emit("registry_updated", {})
+        threading.Thread(target=_rebuild_highlighted, daemon=True).start()
     except Exception as e:
         print(f"[status-update] Error: {e}")
     finally:
@@ -1806,9 +2262,9 @@ def _run_whatsapp_campaign(twilio_sid, twilio_token, twilio_sender, host_url, ev
         phone_col = col_map.get("phone number")
         
         for _, row in df_xl.iterrows():
-            name_v = str(row.get(col_map.get("name"), "") or "").strip()
-            phone_v = str(row.get(phone_col, "") or "").strip() if phone_col else ""
-            reg_v = str(row.get(col_map.get("registration number"), "") or "").strip()
+            name_v = _clean_val(row.get(col_map.get("name")))
+            phone_v = _clean_val(row.get(phone_col)) if phone_col else ""
+            reg_v = _clean_val(row.get(col_map.get("registration number")))
             
             if name_v and phone_v and reg_v:
                 phone_clean = re.sub(r"[^\d+]", "", phone_v)
@@ -1819,7 +2275,7 @@ def _run_whatsapp_campaign(twilio_sid, twilio_token, twilio_sender, host_url, ev
                         else:
                             phone_clean = "+" + phone_clean
                     
-                    row_data = {c_orig: str(row.get(c_orig, "") or "").strip() for c_low, c_orig in col_map.items()}
+                    row_data = {c_orig: _clean_val(row.get(c_orig)) for c_low, c_orig in col_map.items()}
                     attendees.append({
                         "name": name_v,
                         "phone": phone_clean,
@@ -2022,12 +2478,12 @@ def _run_email_campaign(sender_email, app_password, subject, event_name):
         col_map = {c.lower(): c for c in df_xl.columns}
         
         for _, row in df_xl.iterrows():
-            name_v = str(row.get(col_map.get("name"), "") or "").strip()
-            email_v = str(row.get(col_map.get("email address"), "") or "").strip()
-            reg_v = str(row.get(col_map.get("registration number"), "") or "").strip()
+            name_v = _clean_val(row.get(col_map.get("name")))
+            email_v = _clean_val(row.get(col_map.get("email address")))
+            reg_v = _clean_val(row.get(col_map.get("registration number")))
             
             if name_v and email_v and reg_v:
-                row_data = {c_orig: str(row.get(c_orig, "") or "").strip() for c_low, c_orig in col_map.items()}
+                row_data = {c_orig: _clean_val(row.get(c_orig)) for c_low, c_orig in col_map.items()}
                 attendees.append({
                     "name": name_v,
                     "email": email_v,
@@ -2216,17 +2672,20 @@ def download_csv():
     return jsonify(message="No scan log found."), 404
 
 
+load_active_event()
+
+
 # ── Entry point ────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
     port  = int(os.environ.get("PORT", 5001))
     debug = os.environ.get("FLASK_DEBUG", "false").lower() == "true"
     lan_ip = get_lan_ip()
-    print(f"")
-    print(f"🚀  QR Check-In System is starting…")
-    print(f"")
-    print(f"   Local  → http://localhost:{port}")
-    print(f"   Network→ http://{lan_ip}:{port}  ← share this with other devices")
-    print(f"")
-    print(f"   All devices on the same Wi-Fi can open the network URL above.")
-    print(f"")
+    print("")
+    print("=== QR Check-In System is starting ===")
+    print("")
+    print(f"   Local   -> http://localhost:{port}")
+    print(f"   Network -> http://{lan_ip}:{port}  (share this with other devices)")
+    print("")
+    print("   All devices on the same Wi-Fi can open the network URL above.")
+    print("")
     socketio.run(app, debug=debug, host="0.0.0.0", port=port)

@@ -1115,10 +1115,6 @@
   <div class="network-bar" id="network-bar">
     <span class="network-bar-label">📡 Other Devices:</span>
     <span class="network-url" id="network-url">Loading…</span>
-    <div style="display: flex; align-items: center; gap: 8px; margin: 0 16px;">
-      <span class="network-bar-label">This Device Label:</span>
-      <input type="text" id="device-name-input" class="device-name-input" placeholder="Device Label" />
-    </div>
     <div class="devices-badge" id="devices-badge">
       <div class="devices-dot"></div>
       <span id="devices-count">1</span>&nbsp;online
@@ -1275,32 +1271,16 @@
           <button class="ops-tab-btn" id="ops-tab-import-btn">Import Spreadsheet</button>
           <button class="ops-tab-btn" id="ops-tab-email-btn">Bulk Send</button>
           <button class="ops-tab-btn" id="ops-tab-settings-btn">Settings & Templates</button>
+          <button class="ops-tab-btn" id="ops-tab-tools-btn">Clean & QR Tools</button>
         </div>
 
         <!-- Tab 1: Add Guest Form -->
         <div class="ops-tab-content active" id="ops-tab-add-content">
           <form id="add-guest-form" onsubmit="return false;">
-            <div class="form-group">
-              <label class="form-label">Name</label>
-              <input type="text" id="add-guest-name" class="form-input" placeholder="e.g. John Doe" required />
-            </div>
-            <div class="form-group">
-              <label class="form-label">Email Address</label>
-              <input type="email" id="add-guest-email" class="form-input" placeholder="e.g. john@example.com" required />
-            </div>
-            <div class="form-group">
-              <label class="form-label">Phone Number</label>
-              <input type="text" id="add-guest-phone" class="form-input" placeholder="e.g. +919876543210 (optional)" />
-            </div>
-            <div class="form-group">
-              <label class="form-label">Registration Number</label>
-              <input type="text" id="add-guest-reg" class="form-input" placeholder="e.g. TCONF101" required />
-            </div>
+            <!-- Dynamic Guest Fields Container -->
+            <div id="dynamic-guest-fields-container" style="display: flex; flex-direction: column; gap: 14px;"></div>
             
-            <!-- Dynamic Custom Fields Container -->
-            <div id="dynamic-guest-fields"></div>
-            
-            <button type="submit" class="ops-btn" id="add-guest-submit">Register Guest & Generate QR</button>
+            <button type="submit" class="ops-btn" id="add-guest-submit" style="margin-top: 14px;">Register Guest & Generate QR</button>
           </form>
         </div>
 
@@ -1463,6 +1443,39 @@
           </form>
         </div>
 
+        <!-- Tab 5: Clean & QR Tools -->
+        <div class="ops-tab-content" id="ops-tab-tools-content">
+          <div style="display: flex; flex-direction: column; gap: 16px;">
+            
+            <!-- Card 1: Remove Duplicates -->
+            <div style="border: 1px solid var(--border); padding: 12px; border-radius: 8px; background: rgba(255,255,255,0.02);">
+              <div style="font-weight: 700; font-size: 0.86rem; color: #e74c3c; margin-bottom: 6px; display: flex; align-items: center; gap: 6px;">
+                🧹 Clean & Remove Duplicates
+              </div>
+              <div style="font-size: 0.76rem; color: var(--muted); margin-bottom: 12px; line-height: 1.4;">
+                Scans the attendee registry and permanently removes duplicate guest rows based on their Registration Number. Keeps the first registered entry and deletes subsequent ones, preserving image placements.
+              </div>
+              <button id="btn-tab-clean-duplicates" class="ops-btn" style="background: #e74c3c; border-color: #e74c3c; color: #fff; width: auto; padding: 6px 16px;">
+                Run Duplicates Cleaner
+              </button>
+            </div>
+            
+            <!-- Card 2: Regenerate QR/Barcodes -->
+            <div style="border: 1px solid var(--border); padding: 12px; border-radius: 8px; background: rgba(255,255,255,0.02);">
+              <div style="font-weight: 700; font-size: 0.86rem; color: var(--accent); margin-bottom: 6px; display: flex; align-items: center; gap: 6px;">
+                🔄 Regenerate QR & Barcodes
+              </div>
+              <div style="font-size: 0.76rem; color: var(--muted); margin-bottom: 12px; line-height: 1.4;">
+                Re-generates and re-embeds all QR codes and Barcodes for all attendees in the active spreadsheet. Use this to refresh images or heal the spreadsheet columns if they got corrupted.
+              </div>
+              <button id="btn-tab-regenerate-assets" class="ops-btn" style="background: var(--accent); border-color: var(--accent); color: #fff; width: auto; padding: 6px 16px;">
+                Regenerate All Images
+              </button>
+            </div>
+
+          </div>
+        </div>
+
       </div>
 
       <!-- Connected Devices Monitor -->
@@ -1516,7 +1529,7 @@
         <table id="csv-table" class="display" style="width:100%">
           <thead>
             <tr>
-              <th>QR Data</th>
+              <th>Attendee</th>
               <th>Count</th>
               <th>Last Scan</th>
               <th>Last Scanner</th>
@@ -1596,20 +1609,14 @@
     return `${os} ${br}`;
   }
 
-  // Set up local device registration info (registers as 'Manager Dashboard')
-  const devNameInput = document.getElementById('device-name-input');
+  // Set up socket.io connection
+  const socket = io();
+
   let deviceId = localStorage.getItem('device_id');
   if (!deviceId) {
     deviceId = 'dev_' + Math.random().toString(36).substr(2, 9);
     localStorage.setItem('device_id', deviceId);
   }
-  
-  let deviceName = localStorage.getItem('device_name');
-  if (!deviceName) {
-    deviceName = "Manager Console";
-    localStorage.setItem('device_name', deviceName);
-  }
-  devNameInput.value = deviceName;
 
 
 
@@ -1618,21 +1625,25 @@
   const opsTabImportBtn = document.getElementById('ops-tab-import-btn');
   const opsTabEmailBtn = document.getElementById('ops-tab-email-btn');
   const opsTabSettingsBtn = document.getElementById('ops-tab-settings-btn');
+  const opsTabToolsBtn = document.getElementById('ops-tab-tools-btn');
 
   const opsTabAddContent = document.getElementById('ops-tab-add-content');
   const opsTabImportContent = document.getElementById('ops-tab-import-content');
   const opsTabEmailContent = document.getElementById('ops-tab-email-content');
   const opsTabSettingsContent = document.getElementById('ops-tab-settings-content');
+  const opsTabToolsContent = document.getElementById('ops-tab-tools-content');
 
   function deactivateAllOpsTabs() {
     opsTabAddBtn.classList.remove('active');
     opsTabImportBtn.classList.remove('active');
     opsTabEmailBtn.classList.remove('active');
     opsTabSettingsBtn.classList.remove('active');
+    opsTabToolsBtn.classList.remove('active');
     opsTabAddContent.classList.remove('active');
     opsTabImportContent.classList.remove('active');
     opsTabEmailContent.classList.remove('active');
     opsTabSettingsContent.classList.remove('active');
+    opsTabToolsContent.classList.remove('active');
   }
 
   opsTabAddBtn.addEventListener('click', () => {
@@ -1658,6 +1669,12 @@
     opsTabSettingsBtn.classList.add('active');
     opsTabSettingsContent.classList.add('active');
     loadSettings();
+  });
+
+  opsTabToolsBtn.addEventListener('click', () => {
+    deactivateAllOpsTabs();
+    opsTabToolsBtn.classList.add('active');
+    opsTabToolsContent.classList.add('active');
   });
 
   // ── Tab 3 Sub-tabs Toggling ────────────────────────────────────────────────
@@ -1762,20 +1779,33 @@
   // ── Add Guest Form Submission ─────────────────────────────────────────────
   document.getElementById('add-guest-form').addEventListener('submit', (e) => {
     e.preventDefault();
-    const name = document.getElementById('add-guest-name').value.trim();
-    const email = document.getElementById('add-guest-email').value.trim();
-    const phone = document.getElementById('add-guest-phone').value.trim();
-    const reg_no = document.getElementById('add-guest-reg').value.trim();
     const submitBtn = document.getElementById('add-guest-submit');
-
-    // Collect dynamic custom fields
-    const custom_fields = {};
-    document.querySelectorAll('.dynamic-field-input').forEach(input => {
-      custom_fields[input.dataset.col] = input.value.trim();
-    });
-
     submitBtn.disabled = true;
     submitBtn.textContent = 'Registering...';
+
+    let name = '';
+    let email = '';
+    let reg_no = '';
+    let phone = '';
+    const custom_fields = {};
+
+    document.querySelectorAll('.dynamic-field-input').forEach(input => {
+      const key = input.getAttribute('data-key');
+      const val = input.value.trim();
+      const colName = input.getAttribute('data-name');
+
+      if (key === 'name') {
+        name = val;
+      } else if (key === 'registration number') {
+        reg_no = val;
+      } else if (key === 'email address' || key === 'email') {
+        email = val;
+      } else if (key === 'phone number' || key === 'phone') {
+        phone = val;
+      } else {
+        custom_fields[colName] = val;
+      }
+    });
 
     fetch('/add_attendee', {
       method: 'POST',
@@ -1789,8 +1819,6 @@
     .then(data => {
       showDashboardToast(name, `✅ Successfully registered: ${reg_no}`, 'ok');
       document.getElementById('add-guest-form').reset();
-      // Clear dynamic fields
-      document.querySelectorAll('.dynamic-field-input').forEach(input => input.value = '');
     })
     .catch(err => {
       showDashboardToast('Registration Failed', err.message, 'err');
@@ -1803,26 +1831,39 @@
 
   // ── Load Dynamic Guest Form Fields ─────────────────────────────────────────
   function loadDynamicGuestFields() {
-    const container = document.getElementById('dynamic-guest-fields');
+    const container = document.getElementById('dynamic-guest-fields-container');
     if (!container) return;
-    container.innerHTML = '';
 
-    fetch('/active_event_columns')
+    fetch('/active_event_form_fields')
       .then(r => r.json())
       .then(data => {
-        if (data.columns && data.columns.length > 0) {
-          data.columns.forEach(col => {
+        container.innerHTML = '';
+        if (data.fields && data.fields.length > 0) {
+          data.fields.forEach(field => {
             const div = document.createElement('div');
             div.className = 'form-group';
+            let inputType = 'text';
+            let placeholder = `e.g. Enter ${field.name}`;
+            if (field.key === 'email address' || field.key === 'email') {
+              inputType = 'email';
+              placeholder = 'e.g. john@example.com';
+            } else if (field.key === 'phone number' || field.key === 'phone') {
+              placeholder = 'e.g. +919876543210 (optional)';
+            } else if (field.key === 'name') {
+              placeholder = 'e.g. John Doe';
+            } else if (field.key === 'registration number') {
+              placeholder = 'e.g. TCONF101';
+            }
+            
             div.innerHTML = `
-              <label class="form-label">${escapeHtml(col)}</label>
-              <input type="text" class="form-input dynamic-field-input" data-col="${escapeHtml(col)}" placeholder="Enter ${escapeHtml(col)}" />
+              <label class="form-label">${escapeHtml(field.name)} ${field.required ? '<span style="color:var(--accent);">*</span>' : ''}</label>
+              <input type="${inputType}" class="form-input dynamic-field-input" data-key="${escapeHtml(field.key)}" data-name="${escapeHtml(field.name)}" placeholder="${escapeHtml(placeholder)}" ${field.required ? 'required' : ''} />
             `;
             container.appendChild(div);
           });
         }
       })
-      .catch(err => console.error('Error loading columns:', err));
+      .catch(err => console.error('Error loading fields:', err));
   }
 
   // ── Event Explorer Tree & switching ───────────────────────────────────────
@@ -2577,8 +2618,15 @@
     },
     columns: [
       {
-        data: 'QR Data',
-        render: d => `<span title="${d}">${d.length > 40 ? d.slice(0,40)+'…' : d}</span>`
+        data: null,
+        render: (row) => {
+          const name = row.attendee_name || row['QR Data'];
+          const reg = row.reg_no || '';
+          if (reg && reg !== 'Unknown') {
+            return `<div><strong>${escapeHtml(name)}</strong><br/><small style="color:var(--muted); font-size:0.75rem;">${escapeHtml(reg)}</small></div>`;
+          }
+          return `<div><strong>${escapeHtml(name)}</strong></div>`;
+        }
       },
       {
         data: 'Scan Count',
@@ -2762,17 +2810,8 @@
   });
 
   // ── Socket.IO real-time events ────────────────────────────────────────────
-  const socket = io();
 
-  // Handle local name edits and sync
-  devNameInput.addEventListener('change', () => {
-    const newName = devNameInput.value.trim();
-    if (newName) {
-      deviceName = newName;
-      localStorage.setItem('device_name', newName);
-      socket.emit('rename_device', { device_id: deviceId, name: newName });
-    }
-  });
+
 
   // Handle device renaming directly from manager card grid
   window.editDeviceName = function(targetId, currentName) {
@@ -2811,6 +2850,8 @@
 
     const rec = {
       'QR Data':        row.qr_data,
+      'attendee_name':  row.attendee_name || '',
+      'reg_no':         row.reg_no || '',
       'Scan Count':     row.scan_count,
       'Last Timestamp': row.last_timestamp,
       'Last Device':    row.last_device,
@@ -2975,6 +3016,66 @@
         helpModal.classList.remove('active');
       }
     });
+
+    // ── Clean Duplicates Logic ───────────────────────────────────────────────
+    const btnCleanDuplicates = document.getElementById('btn-tab-clean-duplicates');
+    if (btnCleanDuplicates) {
+      btnCleanDuplicates.addEventListener('click', () => {
+        if (!confirm('Are you sure you want to scan the registrations list and permanently remove all rows with duplicate registration numbers?')) {
+          return;
+        }
+        
+        btnCleanDuplicates.disabled = true;
+        const originalText = btnCleanDuplicates.innerHTML;
+        btnCleanDuplicates.innerHTML = '🧹 Cleaning...';
+        
+        fetch('/clean_duplicates', { method: 'POST' })
+          .then(r => {
+            if (!r.ok) return r.json().then(e => { throw new Error(e.message || 'Cleaning failed'); });
+            return r.json();
+          })
+          .then(data => {
+            showDashboardToast('Cleaning Success', data.message, 'ok');
+          })
+          .catch(err => {
+            showDashboardToast('Cleaning Failed', err.message, 'err');
+          })
+          .finally(() => {
+            btnCleanDuplicates.disabled = false;
+            btnCleanDuplicates.innerHTML = originalText;
+          });
+      });
+    }
+
+    // ── Regenerate All Images Logic ──────────────────────────────────────────
+    const btnRegenerateAssets = document.getElementById('btn-tab-regenerate-assets');
+    if (btnRegenerateAssets) {
+      btnRegenerateAssets.addEventListener('click', () => {
+        if (!confirm('Are you sure you want to regenerate and re-embed all QR codes and barcodes? This will refresh all images in the active spreadsheet.')) {
+          return;
+        }
+        
+        btnRegenerateAssets.disabled = true;
+        const originalText = btnRegenerateAssets.innerHTML;
+        btnRegenerateAssets.innerHTML = '🔄 Regenerating...';
+        
+        fetch('/regenerate_assets', { method: 'POST' })
+          .then(r => {
+            if (!r.ok) return r.json().then(e => { throw new Error(e.message || 'Regeneration failed'); });
+            return r.json();
+          })
+          .then(data => {
+            showDashboardToast('Regeneration Success', data.message, 'ok');
+          })
+          .catch(err => {
+            showDashboardToast('Regeneration Failed', err.message, 'err');
+          })
+          .finally(() => {
+            btnRegenerateAssets.disabled = false;
+            btnRegenerateAssets.innerHTML = originalText;
+          });
+      });
+    }
   }
   // ── Theme Toggle Logic ────────────────────────────────────────────────────
   const themeToggle = document.getElementById('btn-theme-toggle');
@@ -2991,7 +3092,7 @@
     document.getElementById('network-url').textContent = 'Reconnecting...';
   });
   socket.on('connect',    () => {
-    socket.emit('register_device', { device_id: deviceId, device_name: deviceName });
+    // No registration needed for Manager Dashboard (only actual scanners register)
   });
 </script>
 

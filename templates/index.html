@@ -807,8 +807,11 @@
     </div>
     <div style="display: flex; gap: 12px; align-items: center;">
       <button id="btn-theme-toggle" class="download-btn csv-dl" style="border-color: var(--accent2); color: var(--accent2); background: transparent; cursor: pointer; font-family: var(--font); font-size: 0.76rem; font-weight: 700; display: flex; align-items: center; gap: 6px; padding: 6px 14px; border-radius: 8px;">🌓 Theme</button>
+      {% if is_admin %}
       <a href="/download/excel" class="download-btn excel-dl" title="Download Highlighted Excel Report">📊 Export Excel</a>
       <a href="/download/csv" class="download-btn csv-dl" title="Download Raw Check-In CSV Log">📝 Export CSV</a>
+      {% endif %}
+      <a href="/dashboard" class="download-btn csv-dl" style="border-color: var(--accent); color: var(--accent); background: transparent; cursor: pointer; font-family: var(--font); font-size: 0.76rem; font-weight: 700; display: flex; align-items: center; gap: 6px; padding: 6px 14px; border-radius: 8px; text-decoration: none;" title="Go to Manager Dashboard">⚙️ Dashboard</a>
       <div class="header-time">
         <div id="live-date"></div>
         <div id="live-time"></div>
@@ -883,13 +886,18 @@
 
   <!-- Navigation Tabs -->
   <div class="tabs-container">
+    {% if is_admin %}
     <button class="tab-btn active" id="tab-log-btn">Live Scan Log</button>
     <button class="tab-btn" id="tab-registry-btn">Attendee Registry Lookup</button>
     <button class="tab-btn" id="tab-devices-btn">📡 Devices Monitor</button>
     <button class="tab-btn" id="tab-history-btn">My Scans</button>
+    {% else %}
+    <button class="tab-btn active" id="tab-history-btn">My Scans</button>
+    {% endif %}
   </div>
 
   <!-- Tab Contents -->
+  {% if is_admin %}
   <div id="tab-log-content" class="tab-content active">
     <div class="panel log-panel">
       <div class="panel-title">Live Scan Log</div>
@@ -983,8 +991,9 @@
       </div>
     </div>
   </div>
+  {% endif %}
 
-  <div id="tab-history-content" class="tab-content">
+  <div id="tab-history-content" class="tab-content{% if not is_admin %} active{% endif %}">
     <div class="panel log-panel">
       <div class="panel-title">My Scans History (This Device)</div>
       <div style="margin-bottom: 15px; text-align: right;">
@@ -1013,6 +1022,8 @@
 <script src="/static/js/jquery.dataTables.min.js"></script>
 <script type="module">
   import QrScanner from '/static/js/qr-scanner.min.js';
+
+  const isAdmin = {{ 'true' if is_admin else 'false' }};
 
   // Helper to escape HTML safely
   function escapeHtml(str) {
@@ -1389,209 +1400,220 @@
     setStatus('Scanning…');
   });
 
-  // ── DataTable: Live Scan Log ──────────────────────────────────────────────
-  const csvTable = $('#csv-table').DataTable({
-    ajax: { 
-      url: '/data_csv', 
-      dataSrc: function(json) {
-        // Dynamically update the Device filter dropdown
-        const select = document.getElementById('filter-log-device');
-        if (select) {
-          const currentVal = select.value;
-          const devices = new Set();
-          json.forEach(row => {
-            if (row['Last Device']) {
-              devices.add(row['Last Device']);
-            }
-          });
-          select.innerHTML = '<option value="">All Devices</option>';
-          Array.from(devices).sort().forEach(d => {
-            const opt = document.createElement('option');
-            opt.value = d;
-            opt.textContent = d;
-            if (d === currentVal) opt.selected = true;
-            select.appendChild(opt);
-          });
-        }
-        return json;
-      }
-    },
-    columns: [
-      {
-        data: 'QR Data',
-        render: d => `<span title="${d}">${d.length > 40 ? d.slice(0,40)+'…' : d}</span>`
-      },
-      {
-        data: 'Scan Count',
-        render: n => `<span class="badge-count${n > 1 ? ' multi' : ''}">${n}</span>`
-      },
-      { data: 'Last Timestamp' },
-      {
-        data: 'Last Device',
-        render: d => d ? `<span style="color: var(--accent2); font-weight: 600;">${escapeHtml(d)}</span>` : '<span style="color: var(--muted);">—</span>'
-      },
-      {
-        data: 'Timestamps',
-        render: d => {
-          const parts = (d || '').split(';').filter(Boolean);
-          return parts.length > 1 ? `${parts.length} scans` : (parts[0] || '—');
-        }
-      }
-    ],
-    order: [[2, 'desc']],
-    pageLength: 15,
-    language: {
-      search: '',
-      searchPlaceholder: 'Search log…',
-      lengthMenu: 'Show _MENU_',
-      info: '_START_–_END_ of _TOTAL_',
-    }
-  });
+  let csvTable;
+  let registryTable;
 
-  // ── DataTable: Attendee Registry ──────────────────────────────────────────
-  const registryTable = $('#registry-table').DataTable({
-    ajax: { url: '/registry', dataSrc: '' },
-    columns: [
-      { data: 'name' },
-      { data: 'email' },
-      { data: 'reg_no' },
-      { 
-        data: 'status',
-        render: d => {
-          const isScanned = d && d.toLowerCase().startsWith('scanned');
-          return `<span class="badge-status ${isScanned ? 'scanned' : 'not-scanned'}">${d}</span>`;
-        }
-      },
-      {
-        data: null,
-        orderable: false,
-        render: (data, type, row) => {
-          const isScanned = row.status && row.status.toLowerCase().startsWith('scanned');
-          if (isScanned) {
-            return `<span style="color: var(--accent); font-size: 0.78rem; font-weight:700;">✓ Checked In</span>`;
+  if (isAdmin) {
+    // ── DataTable: Live Scan Log ──────────────────────────────────────────────
+    csvTable = $('#csv-table').DataTable({
+      ajax: { 
+        url: '/data_csv', 
+        dataSrc: function(json) {
+          // Dynamically update the Device filter dropdown
+          const select = document.getElementById('filter-log-device');
+          if (select) {
+            const currentVal = select.value;
+            const devices = new Set();
+            json.forEach(row => {
+              if (row['Last Device']) {
+                devices.add(row['Last Device']);
+              }
+            });
+            select.innerHTML = '<option value="">All Devices</option>';
+            Array.from(devices).sort().forEach(d => {
+              const opt = document.createElement('option');
+              opt.value = d;
+              opt.textContent = d;
+              if (d === currentVal) opt.selected = true;
+              select.appendChild(opt);
+            });
           }
-          const qrEscaped = btoa(unescape(encodeURIComponent(row.qr)));
-          return `<button class="manual-checkin-btn" data-qr-b64="${qrEscaped}">Check In</button>`;
+          return json;
         }
+      },
+      columns: [
+        {
+          data: null,
+          render: (row) => {
+            const name = row.attendee_name || row['QR Data'];
+            const reg = row.reg_no || '';
+            if (reg && reg !== 'Unknown') {
+              return `<div><strong>${escapeHtml(name)}</strong><br/><small style="color:var(--muted); font-size:0.75rem;">${escapeHtml(reg)}</small></div>`;
+            }
+            return `<div><strong>${escapeHtml(name)}</strong></div>`;
+          }
+        },
+        {
+          data: 'Scan Count',
+          render: n => `<span class="badge-count${n > 1 ? ' multi' : ''}">${n}</span>`
+        },
+        { data: 'Last Timestamp' },
+        {
+          data: 'Last Device',
+          render: d => d ? `<span style="color: var(--accent2); font-weight: 600;">${escapeHtml(d)}</span>` : '<span style="color: var(--muted);">—</span>'
+        },
+        {
+          data: 'Timestamps',
+          render: d => {
+            const parts = (d || '').split(';').filter(Boolean);
+            return parts.length > 1 ? `${parts.length} scans` : (parts[0] || '—');
+          }
+        }
+      ],
+      order: [[2, 'desc']],
+      pageLength: 15,
+      language: {
+        search: '',
+        searchPlaceholder: 'Search log…',
+        lengthMenu: 'Show _MENU_',
+        info: '_START_–_END_ of _TOTAL_',
       }
-    ],
-    pageLength: 15,
-    language: {
-      search: '',
-      searchPlaceholder: 'Search registry…',
-      lengthMenu: 'Show _MENU_',
-      info: '_START_–_END_ of _TOTAL_',
-    }
-  });
+    });
 
-  // ── Advanced DataTables Filtering ──────────────────────────────────────────
-  $.fn.dataTable.ext.search.push(
-    function(settings, data, dataIndex) {
-      const tableId = settings.nTable.id;
-      
-      // 1) Live Scan Log filtering
-      if (tableId === 'csv-table') {
-        const deviceFilter = document.getElementById('filter-log-device').value;
-        const typeFilter = document.getElementById('filter-log-type').value;
-        const timeFilter = document.getElementById('filter-log-time').value;
-        
-        const rowData = csvTable.row(dataIndex).data();
-        if (!rowData) return true;
-        
-        // Filter by Device (match against Last Device)
-        if (deviceFilter && rowData['Last Device'] !== deviceFilter) {
-          return false;
+    // ── DataTable: Attendee Registry ──────────────────────────────────────────
+    registryTable = $('#registry-table').DataTable({
+      ajax: { url: '/registry', dataSrc: '' },
+      columns: [
+        { data: 'name' },
+        { data: 'email' },
+        { data: 'reg_no' },
+        { 
+          data: 'status',
+          render: d => {
+            const isScanned = d && d.toLowerCase().startsWith('scanned');
+            return `<span class="badge-status ${isScanned ? 'scanned' : 'not-scanned'}">${d}</span>`;
+          }
+        },
+        {
+          data: null,
+          orderable: false,
+          render: (data, type, row) => {
+            const isScanned = row.status && row.status.toLowerCase().startsWith('scanned');
+            if (isScanned) {
+              return `<span style="color: var(--accent); font-size: 0.78rem; font-weight:700;">✓ Checked In</span>`;
+            }
+            const qrEscaped = btoa(unescape(encodeURIComponent(row.qr)));
+            return `<button class="manual-checkin-btn" data-qr-b64="${qrEscaped}">Check In</button>`;
+          }
         }
+      ],
+      pageLength: 15,
+      language: {
+        search: '',
+        searchPlaceholder: 'Search registry…',
+        lengthMenu: 'Show _MENU_',
+        info: '_START_–_END_ of _TOTAL_',
+      }
+    });
+
+    // ── Advanced DataTables Filtering ──────────────────────────────────────────
+    $.fn.dataTable.ext.search.push(
+      function(settings, data, dataIndex) {
+        const tableId = settings.nTable.id;
         
-        // Filter by Type (Unique vs. Duplicate)
-        if (typeFilter === 'unique' && parseInt(rowData['Scan Count']) > 1) {
-          return false;
-        } else if (typeFilter === 'duplicate' && parseInt(rowData['Scan Count']) <= 1) {
-          return false;
-        }
-        
-        // Filter by Time
-        if (timeFilter) {
-          const lastTsStr = rowData['Last Timestamp'];
-          if (!lastTsStr) return false;
+        // 1) Live Scan Log filtering
+        if (tableId === 'csv-table') {
+          const deviceFilter = document.getElementById('filter-log-device').value;
+          const typeFilter = document.getElementById('filter-log-type').value;
+          const timeFilter = document.getElementById('filter-log-time').value;
           
-          const parts = lastTsStr.split(/[- :]/);
-          const lastTsDate = new Date(parts[0], parts[1]-1, parts[2], parts[3], parts[4], parts[5]);
-          const now = new Date();
-          const diffMins = (now - lastTsDate) / (1000 * 60);
+          const rowData = csvTable.row(dataIndex).data();
+          if (!rowData) return true;
           
-          if (diffMins > parseInt(timeFilter)) {
+          // Filter by Device (match against Last Device)
+          if (deviceFilter && rowData['Last Device'] !== deviceFilter) {
             return false;
           }
+          
+          // Filter by Type (Unique vs. Duplicate)
+          if (typeFilter === 'unique' && parseInt(rowData['Scan Count']) > 1) {
+            return false;
+          } else if (typeFilter === 'duplicate' && parseInt(rowData['Scan Count']) <= 1) {
+            return false;
+          }
+          
+          // Filter by Time
+          if (timeFilter) {
+            const lastTsStr = rowData['Last Timestamp'];
+            if (!lastTsStr) return false;
+            
+            const parts = lastTsStr.split(/[- :]/);
+            const lastTsDate = new Date(parts[0], parts[1]-1, parts[2], parts[3], parts[4], parts[5]);
+            const now = new Date();
+            const diffMins = (now - lastTsDate) / (1000 * 60);
+            
+            if (diffMins > parseInt(timeFilter)) {
+              return false;
+            }
+          }
+          
+          return true;
+        }
+        
+        // 2) Registry filtering
+        if (tableId === 'registry-table') {
+          const statusFilter = document.getElementById('filter-reg-status').value;
+          const rowData = registryTable.row(dataIndex).data();
+          if (!rowData) return true;
+          
+          const isScanned = rowData.status && rowData.status.toLowerCase().startsWith('scanned');
+          
+          if (statusFilter === 'scanned' && !isScanned) {
+            return false;
+          }
+          if (statusFilter === 'not-scanned' && isScanned) {
+            return false;
+          }
+          
+          return true;
         }
         
         return true;
       }
-      
-      // 2) Registry filtering
-      if (tableId === 'registry-table') {
-        const statusFilter = document.getElementById('filter-reg-status').value;
-        const rowData = registryTable.row(dataIndex).data();
-        if (!rowData) return true;
-        
-        const isScanned = rowData.status && rowData.status.toLowerCase().startsWith('scanned');
-        
-        if (statusFilter === 'scanned' && !isScanned) {
-          return false;
-        }
-        if (statusFilter === 'not-scanned' && isScanned) {
-          return false;
-        }
-        
-        return true;
-      }
-      
-      return true;
-    }
-  );
+    );
 
-  // Trigger redraw on filter changes
-  document.getElementById('filter-log-device').addEventListener('change', () => csvTable.draw());
-  document.getElementById('filter-log-type').addEventListener('change', () => csvTable.draw());
-  document.getElementById('filter-log-time').addEventListener('change', () => csvTable.draw());
-  document.getElementById('filter-reg-status').addEventListener('change', () => registryTable.draw());
-  
-  document.getElementById('reset-log-filters').addEventListener('click', () => {
-    document.getElementById('filter-log-device').value = "";
-    document.getElementById('filter-log-type').value = "";
-    document.getElementById('filter-log-time').value = "";
-    csvTable.draw();
-  });
-
-  // Handle Manual Check-in Click
-  $('#registry-table').on('click', '.manual-checkin-btn', function() {
-    const btn = $(this);
-    const b64 = btn.attr('data-qr-b64');
-    const qrData = decodeURIComponent(escape(atob(b64)));
+    // Trigger redraw on filter changes
+    document.getElementById('filter-log-device').addEventListener('change', () => csvTable.draw());
+    document.getElementById('filter-log-type').addEventListener('change', () => csvTable.draw());
+    document.getElementById('filter-log-time').addEventListener('change', () => csvTable.draw());
+    document.getElementById('filter-reg-status').addEventListener('change', () => registryTable.draw());
     
-    btn.prop('disabled', true).text('Checking...');
-    
-    fetch('/manual_checkin', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ qr_data: qrData, device_id: deviceId })
-    })
-    .then(r => {
-      if (!r.ok) return r.json().then(e => { throw new Error(e.message || 'Check-in failed'); });
-      return r.json();
-    })
-    .then(data => {
-      // scan_alert socket event handles card + toast + stats on all devices
-      const type = data.is_duplicate ? 'warn' : 'ok';
-      setStatus(data.message, type);
-      addLocalHistory(data.details, type);
-    })
-    .catch(e => {
-      setStatus(e.message, 'err');
-      playBeep('err');
-      btn.prop('disabled', false).text('Check In');
+    document.getElementById('reset-log-filters').addEventListener('click', () => {
+      document.getElementById('filter-log-device').value = "";
+      document.getElementById('filter-log-type').value = "";
+      document.getElementById('filter-log-time').value = "";
+      csvTable.draw();
     });
-  });
+
+    // Handle Manual Check-in Click
+    $('#registry-table').on('click', '.manual-checkin-btn', function() {
+      const btn = $(this);
+      const b64 = btn.attr('data-qr-b64');
+      const qrData = decodeURIComponent(escape(atob(b64)));
+      
+      btn.prop('disabled', true).text('Checking...');
+      
+      fetch('/manual_checkin', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ qr_data: qrData, device_id: deviceId })
+      })
+      .then(r => {
+        if (!r.ok) return r.json().then(e => { throw new Error(e.message || 'Check-in failed'); });
+        return r.json();
+      })
+      .then(data => {
+        const type = data.is_duplicate ? 'warn' : 'ok';
+        setStatus(data.message, type);
+        addLocalHistory(data.details, type);
+      })
+      .catch(e => {
+        setStatus(e.message, 'err');
+        playBeep('err');
+        btn.prop('disabled', false).text('Check In');
+      });
+    });
+  }
 
   // ── Tab Toggling ──────────────────────────────────────────────────────────
   const tabLogBtn      = document.getElementById('tab-log-btn');
@@ -1682,6 +1704,8 @@
 
     const rec = {
       'QR Data':        row.qr_data,
+      'attendee_name':  row.attendee_name || '',
+      'reg_no':         row.reg_no || '',
       'Scan Count':     row.scan_count,
       'Last Timestamp': row.last_timestamp,
       'Last Device':    row.last_device,
@@ -1689,26 +1713,30 @@
       'Timestamps':     row.timestamps
     };
 
-    // Update or insert row in scan log table
-    let found = false;
-    csvTable.rows().every(function() {
-      if (this.data()['QR Data'] === row.qr_data) {
-        this.data(rec);
-        $(this.node()).addClass('new-row');
-        setTimeout(() => $(this.node()).removeClass('new-row'), 1600);
-        found = true;
-        return false;
+    if (isAdmin && csvTable) {
+      // Update or insert row in scan log table
+      let found = false;
+      csvTable.rows().every(function() {
+        if (this.data()['QR Data'] === row.qr_data) {
+          this.data(rec);
+          $(this.node()).addClass('new-row');
+          setTimeout(() => $(this.node()).removeClass('new-row'), 1600);
+          found = true;
+          return false;
+        }
+      });
+      if (!found) {
+        const newRow = csvTable.row.add(rec);
+        $(newRow.node()).addClass('new-row');
+        setTimeout(() => $(newRow.node()).removeClass('new-row'), 1600);
       }
-    });
-    if (!found) {
-      const newRow = csvTable.row.add(rec);
-      $(newRow.node()).addClass('new-row');
-      setTimeout(() => $(newRow.node()).removeClass('new-row'), 1600);
+      csvTable.order([[2, 'desc']]).draw(false);
     }
-    csvTable.order([[2, 'desc']]).draw(false);
 
-    // Sync registry table so status badges update
-    registryTable.ajax.reload(null, false);
+    if (isAdmin && registryTable) {
+      // Sync registry table so status badges update
+      registryTable.ajax.reload(null, false);
+    }
 
     // Scanner resume is handled by next scan button or local callback
   });
