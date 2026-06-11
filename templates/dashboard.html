@@ -252,6 +252,9 @@
       grid-template-columns: 420px 1fr;
       gap: 24px;
     }
+    .dashboard-grid > div {
+      min-width: 0;
+    }
     @media (max-width: 1024px) {
       .dashboard-grid { grid-template-columns: 1fr; }
     }
@@ -1088,6 +1091,42 @@
       border-top: 1px solid var(--border);
       margin: 16px 0;
     }
+
+    @media (max-width: 768px) {
+      .stats-row {
+        grid-template-columns: 1fr;
+        gap: 12px;
+      }
+      header {
+        flex-direction: column;
+        align-items: center;
+        gap: 12px;
+        text-align: center;
+      }
+      header > div {
+        flex-wrap: wrap;
+        justify-content: center;
+        gap: 8px !important;
+      }
+      .header-time {
+        text-align: center;
+        width: 100%;
+      }
+      .network-bar {
+        flex-direction: column;
+        align-items: center;
+        text-align: center;
+        gap: 8px;
+        padding: 12px;
+      }
+      .network-url {
+        text-align: center;
+        word-break: break-all;
+      }
+      .app {
+        padding: 12px 12px 48px;
+      }
+    }
   </style>
 </head>
 <body>
@@ -1171,7 +1210,7 @@
         <div style="font-size: 0.75rem; margin-bottom: 8px; color: var(--muted); font-weight: 600; text-transform: uppercase;">Active Folder:</div>
         <div id="active-event-display" style="font-family: var(--mono); font-size: 0.85rem; color: var(--accent); padding: 8px 12px; background: rgba(0, 245, 160, 0.08); border: 1px solid rgba(0, 245, 160, 0.2); border-radius: 8px; margin-bottom: 12px; word-break: break-all;">Default Event</div>
         
-        <div id="event-tree-container" style="max-height: 250px; overflow-y: auto; border: 1px solid var(--border); border-radius: 8px; padding: 10px; background: rgba(0,0,0,0.15);">
+        <div id="event-tree-container" style="max-height: 250px; overflow-y: auto; overflow-x: auto; border: 1px solid var(--border); border-radius: 8px; padding: 10px; background: rgba(0,0,0,0.15);">
           <!-- Hierarchical list of events -->
           <ul id="event-tree-root" style="list-style-type: none; padding-left: 0; font-size: 0.82rem; line-height: 1.8;">
             <li>Loading events...</li>
@@ -1526,18 +1565,20 @@
           <button id="reset-log-filters" style="background: transparent; border: 1px solid var(--border); border-radius: 6px; padding: 5px 10px; font-family: var(--font); font-size: 0.72rem; font-weight: 700; color: var(--muted); cursor: pointer; transition: all 0.2s; margin-top: 11px;" onmouseover="this.style.borderColor='rgba(255,255,255,0.20)'; this.style.color='var(--text)'" onmouseout="this.style.borderColor='var(--border)'; this.style.color='var(--muted)'">Reset Filters</button>
         </div>
 
-        <table id="csv-table" class="display" style="width:100%">
-          <thead>
-            <tr>
-              <th>Attendee</th>
-              <th>Count</th>
-              <th>Last Scan</th>
-              <th>Last Scanner</th>
-              <th>All Timestamps</th>
-            </tr>
-          </thead>
-          <tbody></tbody>
-        </table>
+        <div style="overflow-x: auto; width: 100%;">
+          <table id="csv-table" class="display" style="width:100%">
+            <thead>
+              <tr>
+                <th>Attendee</th>
+                <th>Count</th>
+                <th>Last Scan</th>
+                <th>Last Scanner</th>
+                <th>All Timestamps</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
       </div>
 
       <!-- Attendee Master Registry Table -->
@@ -1558,19 +1599,21 @@
           </div>
         </div>
 
-        <table id="registry-table" class="display" style="width:100%">
-          <thead>
-            <tr>
-              <th>Name</th>
-              <th>Email</th>
-              <th>Phone</th>
-              <th>Reg Number</th>
-              <th>Status</th>
-              <th>Action</th>
-            </tr>
-          </thead>
-          <tbody></tbody>
-        </table>
+        <div style="overflow-x: auto; width: 100%;">
+          <table id="registry-table" class="display" style="width:100%">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Email</th>
+                <th>Phone</th>
+                <th>Reg Number</th>
+                <th>Status</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
       </div>
     </div>
 
