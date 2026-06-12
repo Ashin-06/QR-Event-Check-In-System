@@ -1477,6 +1477,22 @@
               <textarea id="cfg-scan-template" class="form-input" style="height: 80px; font-family: var(--mono); font-size: 0.72rem; resize: vertical;"></textarea>
               <div style="font-size:0.62rem; color:var(--muted); margin-top:2px;">Placeholders: {Name}, {Location}, {Time}, {Registration Number}</div>
             </div>
+
+            <hr style="border: none; border-top: 1px solid var(--border); margin: 16px 0;" />
+            <div style="font-size: 0.75rem; font-weight: 700; color: var(--accent); margin-bottom: 12px; text-transform: uppercase;">Check-In Time Restrictions</div>
+            
+            <div style="display: flex; gap: 16px; flex-wrap: wrap;">
+              <div class="form-group" style="flex: 1; min-width: 200px;">
+                <label class="form-label">Check-In Allowed Start Time (Optional)</label>
+                <input type="time" id="cfg-start-time" class="form-input" />
+                <div style="font-size:0.62rem; color:var(--muted); margin-top:2px;">Check-ins before this time will be rejected & logged.</div>
+              </div>
+              <div class="form-group" style="flex: 1; min-width: 200px;">
+                <label class="form-label">Check-In Allowed End Time (Optional)</label>
+                <input type="time" id="cfg-end-time" class="form-input" />
+                <div style="font-size:0.62rem; color:var(--muted); margin-top:2px;">Check-ins after this time will be rejected & logged.</div>
+              </div>
+            </div>
             
             <button type="submit" class="ops-btn" id="settings-save-btn">Save Configurations</button>
           </form>
@@ -1780,6 +1796,8 @@
         document.getElementById('cfg-whatsapp-template').value = cfg.whatsapp_template || '';
         document.getElementById('cfg-scan-channels').value = cfg.scan_notify_channels || 'none';
         document.getElementById('cfg-scan-template').value = cfg.scan_notify_template || '';
+        document.getElementById('cfg-start-time').value = cfg.checkin_start_time || '';
+        document.getElementById('cfg-end-time').value = cfg.checkin_end_time || '';
       })
       .catch(err => {
         console.error('Error loading config:', err);
@@ -1798,7 +1816,9 @@
       email_template: document.getElementById('cfg-email-template').value,
       whatsapp_template: document.getElementById('cfg-whatsapp-template').value,
       scan_notify_channels: document.getElementById('cfg-scan-channels').value,
-      scan_notify_template: document.getElementById('cfg-scan-template').value
+      scan_notify_template: document.getElementById('cfg-scan-template').value,
+      checkin_start_time: document.getElementById('cfg-start-time').value,
+      checkin_end_time: document.getElementById('cfg-end-time').value
     };
 
     fetch('/save_config', {
@@ -2857,10 +2877,17 @@
 
 
   // Handle device renaming directly from manager card grid
-  window.editDeviceName = function(targetId, currentName) {
-    const newName = prompt(`Enter new name/label for scanner device "${currentName}":`);
+  window.editOperatorName = function(targetId, currentName) {
+    const newName = prompt(`Enter Operator Name for this device (e.g. Abhishek, Arun):`, currentName);
     if (newName && newName.trim()) {
       socket.emit('rename_device', { device_id: targetId, name: newName.trim() });
+    }
+  };
+
+  window.editManagerLabel = function(targetId, currentLabel) {
+    const newLabel = prompt(`Enter Location/Label for this device (e.g. Main Gate, Front Desk):`, currentLabel);
+    if (newLabel !== null) {
+      socket.emit('rename_device_manager', { device_id: targetId, label: newLabel.trim() });
     }
   };
 
@@ -2993,10 +3020,18 @@
       card.innerHTML = `
         <div class="device-card-header">
           <div>
-            <div class="device-card-name" style="display:flex; align-items:center; gap:8px;">
-              <span>${escapeHtml(d.name)}</span>
-              <button onclick="editDeviceName('${d.id}', '${escapeHtml(d.name)}')" class="view-qr-btn" style="padding: 2px 6px; font-size: 0.62rem; margin:0;">Rename</button>
-              ${isLocal ? '<span style="font-size:0.72rem; color:var(--accent); font-weight:600;">(This)</span>' : ''}
+            <div class="device-card-name" style="display:flex; flex-direction:column; gap:4px; margin-bottom: 4px;">
+              <div style="display:flex; align-items:center; gap:8px;">
+                <span style="font-size:0.72rem; color:var(--muted); text-transform:uppercase;">Location:</span>
+                <span style="font-weight:700; color:var(--accent2);">${escapeHtml(d.manager_label || '(Not Set)')}</span>
+                <button onclick="editManagerLabel('${d.id}', '${escapeHtml(d.manager_label || '')}')" class="view-qr-btn" style="padding: 2px 6px; font-size: 0.62rem; margin:0; border-color:rgba(0,245,160,0.3); color:var(--accent);">Set Location</button>
+              </div>
+              <div style="display:flex; align-items:center; gap:8px;">
+                <span style="font-size:0.72rem; color:var(--muted); text-transform:uppercase;">Operator:</span>
+                <span style="font-weight:500;">${escapeHtml(d.name)}</span>
+                <button onclick="editOperatorName('${d.id}', '${escapeHtml(d.name)}')" class="view-qr-btn" style="padding: 2px 6px; font-size: 0.62rem; margin:0; background:rgba(255,255,255,0.05); border-color:var(--border);">Rename</button>
+                ${isLocal ? '<span style="font-size:0.68rem; color:var(--accent); font-weight:600;">(This)</span>' : ''}
+              </div>
             </div>
             <div class="device-card-ip">${escapeHtml(d.ip)}</div>
           </div>

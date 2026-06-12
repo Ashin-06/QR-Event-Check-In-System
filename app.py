@@ -24,6 +24,9 @@ Bug fixes applied:
 
 from __future__ import annotations
 
+import eventlet
+eventlet.monkey_patch()
+
 import sys
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
@@ -222,7 +225,9 @@ def get_event_config() -> dict:
         "twilio_sid": "",
         "twilio_token": "",
         "twilio_sender": "",
-        "event_name_template": "the Event"
+        "event_name_template": "the Event",
+        "checkin_start_time": "",
+        "checkin_end_time": ""
     }
 
 def save_event_config(cfg: dict):
@@ -479,6 +484,7 @@ def _on_register_device(data):
             connected_devices[device_id] = {
                 "id": device_id,
                 "name": device_name,
+                "manager_label": "",
                 "ip": ip,
                 "user_agent": short_ua,
                 "online": True,
@@ -492,6 +498,8 @@ def _on_register_device(data):
             connected_devices[device_id]["user_agent"] = short_ua
             connected_devices[device_id]["online"] = True
             connected_devices[device_id]["last_active_time"] = datetime.now().strftime("%H:%M:%S")
+            if "manager_label" not in connected_devices[device_id]:
+                connected_devices[device_id]["manager_label"] = ""
             if connected_devices[device_id]["last_activity"] == "Offline":
                 connected_devices[device_id]["last_activity"] = "Reconnected"
                 
@@ -507,6 +515,19 @@ def _on_rename_device(data):
     with _devices_lock:
         if device_id in connected_devices:
             connected_devices[device_id]["name"] = new_name
+            connected_devices[device_id]["last_active_time"] = datetime.now().strftime("%H:%M:%S")
+    _broadcast_devices()
+
+
+@socketio.on("rename_device_manager")
+def _on_rename_device_manager(data):
+    device_id = data.get("device_id")
+    new_label = data.get("label", "").strip()
+    if not device_id:
+        return
+    with _devices_lock:
+        if device_id in connected_devices:
+            connected_devices[device_id]["manager_label"] = new_label
             connected_devices[device_id]["last_active_time"] = datetime.now().strftime("%H:%M:%S")
     _broadcast_devices()
 
@@ -760,6 +781,18 @@ def send_scan_notification_async(details, location, timestamp):
             threading.Thread(target=_send_single_whatsapp, args=(sid, token, twilio_phone, phone, body), daemon=True).start()
 
 
+def _log_to_excel_sheet(wb, now_str, name, reg_no, device, status, qr_val):
+    try:
+        if "Scan Log" not in wb.sheetnames:
+            ws_log = wb.create_sheet("Scan Log")
+            ws_log.append(["Timestamp", "Name", "Registration Number", "Scanner Device", "Scan Status", "QR Data"])
+        else:
+            ws_log = wb["Scan Log"]
+        ws_log.append([now_str, name, reg_no, device, status, qr_val])
+    except Exception as e:
+        print(f"[Scan Log] Error appending to sheet: {e}")
+
+
 def _perform_checkin(qr_data: str, device_id: str = "unknown") -> tuple[dict, int]:
     """Helper to perform check-in operations. Returns (response_dict, status_code)."""
     # Normalize incoming QR data string
@@ -768,6 +801,19 @@ def _perform_checkin(qr_data: str, device_id: str = "unknown") -> tuple[dict, in
     excel_file = get_excel_file()
     log_file = get_log_file()
     wb = None
+    
+    # Resolve combined device name
+    device_name = device_id
+    with _devices_lock:
+        if device_id in connected_devices:
+            d_info = connected_devices[device_id]
+            op_name = d_info.get("name", "").strip()
+            m_label = d_info.get("manager_label", "").strip()
+            if m_label:
+                device_name = f"{m_label} ({op_name})" if op_name else m_label
+            else:
+                device_name = op_name if op_name else device_id
+
     try:
         with lock:
             now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -801,10 +847,17 @@ def _perform_checkin(qr_data: str, device_id: str = "unknown") -> tuple[dict, in
                     found_row = row
                     break
 
-            # If not found in Excel, reject check-in
+            # If not found in Excel, reject check-in and log it in the Excel sheet
             if found_row is None:
-                wb.close()
+                try:
+                    _log_to_excel_sheet(wb, now, "Unregistered", "Unknown", device_name, "Unregistered QR Code", qr_data)
+                    _atomic_save(wb, excel_file)
+                except Exception as ex:
+                    print(f"[checkin] Error saving unregistered scan to Excel: {ex}")
+                    if wb:
+                        wb.close()
                 wb = None
+                
                 with _devices_lock:
                     if device_id in connected_devices:
                         connected_devices[device_id]["last_activity"] = "Unregistered Scan"
@@ -812,8 +865,72 @@ def _perform_checkin(qr_data: str, device_id: str = "unknown") -> tuple[dict, in
                 _broadcast_devices()
                 return {"message": "❌ Unregistered QR Code", "details": {}, "is_duplicate": False}, 400
 
-            # 2) Attendee matched! Update Excel row
+            # 2) Attendee matched! Extract details
             r   = found_row[0].row
+            name_val = str(found_row[hdrs["name"] - 1].value or "").strip()
+            reg_val  = str(found_row[hdrs["registration number"] - 1].value or "").strip()
+            
+            # Check time restriction
+            cfg = get_event_config()
+            start_t = cfg.get("checkin_start_time", "").strip()
+            end_t = cfg.get("checkin_end_time", "").strip()
+            
+            is_time_restricted = False
+            time_error_msg = ""
+            now_time_str = datetime.now().strftime("%H:%M")
+            
+            if start_t and now_time_str < start_t:
+                is_time_restricted = True
+                time_error_msg = f"❌ Check-In Not Started (Allowed: after {start_t})"
+            elif end_t and now_time_str > end_t:
+                is_time_restricted = True
+                time_error_msg = f"❌ Check-In Closed (Allowed: before {end_t})"
+                
+            if is_time_restricted:
+                # Still log the scan timestamps and devices in Excel main row under special status
+                col = hdrs[scan_key]
+                ws.cell(row=r, column=col, value="Scanned Outside Time")
+                
+                ts_col_idx = hdrs.get("scan timestamps")
+                dev_col_idx = hdrs.get("scan devices")
+                if ts_col_idx:
+                    prev_ts = str(ws.cell(row=r, column=ts_col_idx).value or "").strip()
+                    ws.cell(row=r, column=ts_col_idx, value=f"{prev_ts};{now}" if prev_ts else now)
+                if dev_col_idx:
+                    prev_dev = str(ws.cell(row=r, column=dev_col_idx).value or "").strip()
+                    ws.cell(row=r, column=dev_col_idx, value=f"{prev_dev};{device_name}" if prev_dev else device_name)
+                    
+                # Append to Scan Log sheet
+                _log_to_excel_sheet(wb, now, name_val, reg_val, device_name, "Before/After Allowed Time", qr_data)
+                
+                # Atomic save Excel
+                _atomic_save(wb, excel_file)
+                wb = None
+                
+                # Send update to device monitor
+                with _devices_lock:
+                    if device_id in connected_devices:
+                        connected_devices[device_id]["last_activity"] = f"Scanned {name_val} (Outside Time)"
+                        connected_devices[device_id]["last_active_time"] = datetime.now().strftime("%H:%M:%S")
+                _broadcast_devices()
+                
+                # Broadcast failed scan alert to ALL devices
+                socketio.emit("scan_alert", {
+                    "name":       name_val,
+                    "is_duplicate": False,
+                    "status":     "Scanned Outside Time",
+                    "message":    time_error_msg,
+                    "details":    {
+                        "Name": name_val,
+                        "Registration Number": reg_val,
+                        "Status": "Scanned Outside Time"
+                    },
+                    "device_name": device_name,
+                })
+                
+                return {"message": time_error_msg, "details": {"Name": name_val, "Registration Number": reg_val}, "is_duplicate": False}, 400
+
+            # Normal check-in flow
             col = hdrs[scan_key]
             curr = ws.cell(row=r, column=col).value or ""
             curr_str = str(curr).strip().lower()
@@ -829,11 +946,6 @@ def _perform_checkin(qr_data: str, device_id: str = "unknown") -> tuple[dict, in
             else:
                 new_status = "Scanned" if cnt == 1 else f"Scanned {cnt} Times"
             ws.cell(row=r, column=col, value=new_status)
-
-            device_name = device_id
-            with _devices_lock:
-                if device_id in connected_devices:
-                    device_name = connected_devices[device_id]["name"]
 
             ts_col_idx = hdrs.get("scan timestamps")
             dev_col_idx = hdrs.get("scan devices")
@@ -863,25 +975,24 @@ def _perform_checkin(qr_data: str, device_id: str = "unknown") -> tuple[dict, in
             email_val = str(found_row[hdrs["email address"] - 1].value or "").strip() if "email address" in hdrs else ""
 
             details = {
-                "Name":                str(found_row[hdrs["name"] - 1].value or "").strip(),
+                "Name":                name_val,
                 "Email":               email_val,
-                "Registration Number": str(found_row[hdrs["registration number"] - 1].value or "").strip(),
+                "Registration Number": reg_val,
                 "Phone":               phone_val,
                 "Status":              new_status,
                 "ScanCount":           cnt,
                 "custom_fields":       custom_fields
             }
 
-            # Atomic write: save to temp then replace (avoids Windows lock conflicts)
+            # Log to Scan Log worksheet
+            log_status = "Checked In" if cnt == 1 else "Duplicate Check-In"
+            _log_to_excel_sheet(wb, now, name_val, reg_val, device_name, log_status, qr_data)
+
+            # Atomic write
             _atomic_save(wb, excel_file)
             wb = None  # already closed by _atomic_save
 
-            # 3) Update CSV log (only for registered attendees)
-            device_name = "unknown"
-            with _devices_lock:
-                if device_id in connected_devices:
-                    device_name = connected_devices[device_id]["name"]
-
+            # 3) Update CSV log (only for registered, on-time check-ins)
             if "Devices" not in scanned_log.columns:
                 scanned_log["Devices"] = ""
 
@@ -911,8 +1022,12 @@ def _perform_checkin(qr_data: str, device_id: str = "unknown") -> tuple[dict, in
             row_data = scanned_log.loc[scanned_log["QR Data"] == qr_data].iloc[0]
         last_ts = row_data["Timestamps"].split(";")[-1].strip()
         last_dev = row_data["Devices"].split(";")[-1].strip() if "Devices" in row_data and row_data["Devices"] else device_name
+        
+        # Include attendee_name and reg_no directly at root for auto-dashboard DataTable reload
         socketio.emit("row_updated", {
             "qr_data":        qr_data,
+            "attendee_name":  name_val,
+            "reg_no":         reg_val,
             "scan_count":     int(row_data["Scan Count"]),
             "timestamps":     row_data["Timestamps"],
             "last_timestamp": last_ts,

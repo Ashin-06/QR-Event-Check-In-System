@@ -258,8 +258,14 @@
         display: flex;
         flex-direction: column;
       }
+      .network-share-info {
+        display: none !important;
+      }
       .network-bar {
-        display: none !important; /* Hide on mobile scanner views to save vertical space */
+        justify-content: space-between;
+        gap: 8px;
+        padding: 8px 12px;
+        margin-bottom: 12px;
       }
       header {
         order: 1;
@@ -844,8 +850,10 @@
 
   <!-- Network Info Bar -->
   <div class="network-bar" id="network-bar">
-    <span class="network-bar-label">📡 Other Devices:</span>
-    <span class="network-url" id="network-url">Loading…</span>
+    <div class="network-share-info" style="display: flex; align-items: center; gap: 8px; flex: 1;">
+      <span class="network-bar-label">📡 Other Devices:</span>
+      <span class="network-url" id="network-url">Loading…</span>
+    </div>
     <div style="display: flex; align-items: center; gap: 8px; margin: 0 16px;">
       <span class="network-bar-label">This Device Label:</span>
       <input type="text" id="device-name-input" class="device-name-input" placeholder="Device Label" />
@@ -858,9 +866,12 @@
 
   <!-- Header -->
   <header>
-    <div class="logo">
+    <div class="logo" style="display: flex; align-items: center; gap: 12px;">
       <div class="logo-icon">⬡</div>
       <div class="logo-text">Event <span>Check-In</span></div>
+      <div id="assigned-location-badge" style="display: none; align-items: center; background: rgba(0, 245, 160, 0.1); border: 1px solid rgba(0, 245, 160, 0.3); color: var(--accent); font-size: 0.72rem; font-weight: 800; padding: 4px 10px; border-radius: 6px; letter-spacing: 0.04em;">
+        📍 LOCATION: <span id="assigned-location-text" style="color: var(--text); font-weight: 500; margin-left: 4px;"></span>
+      </div>
     </div>
     <div style="display: flex; gap: 12px; align-items: center;">
       <button id="btn-theme-toggle" class="download-btn csv-dl" style="border-color: var(--accent2); color: var(--accent2); background: transparent; cursor: pointer; font-family: var(--font); font-size: 0.76rem; font-weight: 700; display: flex; align-items: center; gap: 6px; padding: 6px 14px; border-radius: 8px;">🌓 Theme</button>
@@ -1260,7 +1271,7 @@
   });
 
   // ── Verification Screen Overlay Helpers ──────────────────────────────────
-  function openVerificationOverlay(details, isDuplicate) {
+  function openVerificationOverlay(details, statusType) {
     const overlay = document.getElementById('verify-overlay');
     const badge = document.getElementById('verify-badge');
     const nameEl = document.getElementById('verify-name');
@@ -1271,9 +1282,12 @@
     const countEl = document.getElementById('verify-count');
     const customContainer = document.getElementById('verify-custom-fields');
     
-    if (isDuplicate) {
+    if (statusType === 'warn') {
       badge.className = 'verify-badge warn';
       badge.textContent = 'Duplicate Scan';
+    } else if (statusType === 'time_error') {
+      badge.className = 'verify-badge err';
+      badge.textContent = 'Check-In Blocked';
     } else {
       badge.className = 'verify-badge ok';
       badge.textContent = 'Checked In';
@@ -1374,7 +1388,9 @@
         body: JSON.stringify({ qr_data: result.data ?? result, device_id: deviceId })
       })
       .then(r => {
-        if (!r.ok) return r.json().then(e => { throw new Error(e.message || 'Server error'); });
+        if (!r.ok) {
+          return r.json().then(e => { throw e; });
+        }
         return r.json();
       })
       .then(data => {
@@ -1386,21 +1402,42 @@
           showQuickScanOverlay(type);
           addLocalHistory(data.details, type);
         } else {
-          openVerificationOverlay(data.details, data.is_duplicate);
+          openVerificationOverlay(data.details, type);
           addLocalHistory(data.details, type);
         }
       })
       .catch(e => {
         clearTimeout(scanTimeoutId);
-        setStatus(e.message, 'err');
-        playBeep('err');
+        const errorMsg = e.message || e || 'System or network error';
+        
+        let statusType = 'err';
+        let isTimeRestricted = false;
+        if (e.message && (e.message.includes('Not Started') || e.message.includes('Closed') || e.message.includes('Outside Time'))) {
+          statusType = 'warn';
+          isTimeRestricted = true;
+        }
+        
+        setStatus(errorMsg, statusType === 'warn' ? 'warn' : 'err');
+        playBeep(statusType === 'warn' ? 'warn' : 'err');
         
         if (quickScanToggle.checked) {
-          showQuickScanOverlay('err');
+          showQuickScanOverlay(statusType === 'warn' ? 'warn' : 'err');
         } else {
-          processing = false;
-          scanner.start();
-          scanLine.classList.add('active');
+          if (isTimeRestricted && e.details && e.details.Name) {
+            openVerificationOverlay({
+              Name: e.details.Name,
+              Email: e.details.Email || '',
+              'Registration Number': e.details['Registration Number'] || '',
+              Phone: e.details.Phone || '',
+              Status: errorMsg,
+              ScanCount: e.details.ScanCount || 1,
+              custom_fields: e.details.custom_fields || {}
+            }, 'time_error');
+          } else {
+            processing = false;
+            scanner.start();
+            scanLine.classList.add('active');
+          }
         }
       });
     },
@@ -1685,6 +1722,21 @@
 
   // ── devices_updated: render card grid of all connected devices ─────────────
   socket.on('devices_updated', devs => {
+    // Dynamically show/hide the assigned location badge in the header
+    const myDev = devs.find(d => d.id === deviceId);
+    const locBadge = document.getElementById('assigned-location-badge');
+    const locText = document.getElementById('assigned-location-text');
+    if (myDev && myDev.manager_label) {
+      if (locBadge && locText) {
+        locText.textContent = myDev.manager_label;
+        locBadge.style.display = 'inline-flex';
+      }
+    } else {
+      if (locBadge) {
+        locBadge.style.display = 'none';
+      }
+    }
+
     const grid = document.getElementById('devices-grid');
     if (!grid) return;
     grid.innerHTML = '';
@@ -1697,8 +1749,16 @@
       card.innerHTML = `
         <div class="device-card-header">
           <div>
-            <div class="device-card-name">
-              ${escapeHtml(d.name)} ${isLocal ? '<span style="font-size:0.72rem; color:var(--accent); font-weight:600;">(This Device)</span>' : ''}
+            <div class="device-card-name" style="display:flex; flex-direction:column; gap:4px; margin-bottom: 4px;">
+              <div>
+                <span style="font-size:0.68rem; color:var(--muted); text-transform:uppercase;">Location:</span>
+                <span style="font-weight:700; color:var(--accent2);">${escapeHtml(d.manager_label || '(Not Set)')}</span>
+              </div>
+              <div>
+                <span style="font-size:0.68rem; color:var(--muted); text-transform:uppercase;">Operator:</span>
+                <span style="font-weight:500;">${escapeHtml(d.name)}</span>
+                ${isLocal ? '<span style="font-size:0.68rem; color:var(--accent); font-weight:600;">(This)</span>' : ''}
+              </div>
             </div>
             <div class="device-card-ip">${escapeHtml(d.ip)}</div>
           </div>
