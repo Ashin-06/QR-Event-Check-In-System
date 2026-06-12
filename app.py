@@ -135,6 +135,13 @@ app = Flask(__name__)
 app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", os.urandom(24).hex())
 socketio = SocketIO(app, cors_allowed_origins=os.environ.get("CORS_ORIGIN", "*"))
 
+@app.after_request
+def add_header(r):
+    r.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    r.headers["Pragma"] = "no-cache"
+    r.headers["Expires"] = "0"
+    return r
+
 # ── Connected-client tracker ──────────────────────────────────────────────────
 _clients_lock = threading.Lock()
 _connected_clients: int = 0
@@ -1149,7 +1156,7 @@ def get_registry():
         wa_sent_col = col_map.get("whatsapp sent status")
 
         records = []
-        for _, row in df_xl.iterrows():
+        for index, row in df_xl.iterrows():
             name_v   = _clean_val(row.get(col_map["name"]))
             reg_v    = _clean_val(row.get(col_map["registration number"]))
             qr_v     = _clean_val(row.get(col_map["qr"]))
@@ -1176,6 +1183,7 @@ def get_registry():
                     custom_fields[c_orig] = _clean_val(row.get(c_orig))
 
             records.append({
+                "reg_index": int(index + 1),
                 "name":   name_v,
                 "email":  email_v,
                 "reg_no": reg_v,
@@ -2812,6 +2820,37 @@ load_active_event()
 # ── Entry point ────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
     port  = int(os.environ.get("PORT", 5001))
+    
+    # Gracefully free the port if occupied
+    import os, subprocess, signal
+    try:
+        if os.name == 'nt':
+            cmd = f"netstat -ano | findstr :{port}"
+            out = subprocess.check_output(cmd, shell=True).decode('utf-8', errors='ignore')
+            pids = set()
+            for line in out.strip().split('\n'):
+                line = line.strip()
+                if not line:
+                    continue
+                parts = line.split()
+                if len(parts) >= 5 and "LISTENING" in parts:
+                    pid = parts[-1]
+                    try:
+                        pids.add(int(pid))
+                    except ValueError:
+                        pass
+            my_pid = os.getpid()
+            for pid in pids:
+                if pid != my_pid:
+                    print(f"[*] Port {port} occupied by PID {pid}. Terminating it for a clean start...")
+                    subprocess.run(f"taskkill /F /PID {pid}", shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                    time.sleep(1.0)
+        else:
+            subprocess.run(f"fuser -k -n tcp {port}", shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            time.sleep(1.0)
+    except Exception as e:
+        print(f"[*] Note: Port check completed: {e}")
+
     debug = os.environ.get("FLASK_DEBUG", "false").lower() == "true"
     lan_ip = get_lan_ip()
     print("")

@@ -1619,6 +1619,7 @@
           <table id="registry-table" class="display" style="width:100%">
             <thead>
               <tr>
+                <th>Reg. Order</th>
                 <th>Name</th>
                 <th>Email</th>
                 <th>Phone</th>
@@ -2722,6 +2723,16 @@
   const registryTable = $('#registry-table').DataTable({
     ajax: { url: '/registry', dataSrc: '' },
     columns: [
+      {
+        data: 'reg_index',
+        type: 'num',
+        render: (d, type) => {
+          if (type === 'display') {
+            return `<span class="reg-order-num" style="font-family:var(--mono); color:var(--muted); font-size:0.75rem;">${d}</span>`;
+          }
+          return d;
+        }
+      },
       { data: 'name' },
       { data: 'email' },
       {
@@ -2759,6 +2770,7 @@
         }
       }
     ],
+    order: [[0, 'asc']],
     pageLength: 10,
     language: {
       search: '',
