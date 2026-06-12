@@ -1493,6 +1493,25 @@ def tunnel_status():
     return jsonify(active=_tunnel_active, url=_tunnel_url)
 
 
+@app.route("/tunnel_qr", methods=["GET"])
+def tunnel_qr():
+    data = request.args.get("data", "").strip()
+    if not data:
+        return "Missing data parameter", 400
+    try:
+        qr = qrcode.QRCode(version=1, box_size=5, border=1)
+        qr.add_data(data)
+        qr.make(fit=True)
+        img = qr.make_image(fill_color="black", back_color="white")
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+        buf.seek(0)
+        return send_file(buf, mimetype="image/png")
+    except Exception as e:
+        print(f"[tunnel_qr] Error generating local QR: {e}")
+        return "Internal server error", 500
+
+
 def _get_or_create_headers(ws) -> tuple[dict[str, int], bool]:
     hdrs = _get_headers(ws)
     modified = False

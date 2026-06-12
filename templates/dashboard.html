@@ -2066,7 +2066,7 @@
         tunnelUrlContainer.style.display = 'block';
         tunnelPublicUrl.textContent = data.url;
         tunnelPublicUrl.href = data.url;
-        tunnelQrImg.src = `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(data.url)}`;
+        tunnelQrImg.src = `/tunnel_qr?data=${encodeURIComponent(data.url)}`;
       } else {
         tunnelUrlContainer.style.display = 'block';
         tunnelPublicUrl.textContent = data.url || 'Setting up tunnel...';
@@ -2149,7 +2149,7 @@
             sharingTunnelUrlGroup.style.display = 'none';
           }
           
-          sharingQrImg.src = `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(activeUrl)}`;
+          sharingQrImg.src = `/tunnel_qr?data=${encodeURIComponent(activeUrl)}`;
         }
       })
       .catch(err => console.error('Error loading sharing info:', err));
