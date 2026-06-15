@@ -3504,6 +3504,16 @@ def _generate_id_card(name: str, reg_no: str, phone: str, email: str, uid: str, 
                 
                 # Replace placeholders
                 resolved_html = html_content
+                # Split name into Surname and Given Names for templates that separate them
+                name_parts = name.strip().split()
+                if len(name_parts) > 1:
+                    surname = name_parts[-1]
+                    given_names = " ".join(name_parts[:-1])
+                else:
+                    surname = name
+                    given_names = ""
+                resolved_html = resolved_html.replace("{Surname}", surname)
+                resolved_html = resolved_html.replace("{Given Names}", given_names)
                 resolved_html = resolved_html.replace("{Name}", name)
                 resolved_html = resolved_html.replace("{Registration Number}", reg_no)
                 resolved_html = resolved_html.replace("{Email Address}", email)

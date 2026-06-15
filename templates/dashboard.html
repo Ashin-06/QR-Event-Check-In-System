@@ -6395,6 +6395,8 @@
     
     // Resolve dynamic variables for preview display
     htmlContent = htmlContent.replace(/{Event}/g, "SAMPLE EVENT");
+    htmlContent = htmlContent.replace(/{Surname}/g, "Doe");
+    htmlContent = htmlContent.replace(/{Given Names}/g, "John");
     htmlContent = htmlContent.replace(/{Name}/g, "John Doe");
     htmlContent = htmlContent.replace(/{Pass Type}/g, "VIP");
     htmlContent = htmlContent.replace(/{Registration Number}/g, "DEMO12345");
