@@ -177,6 +177,10 @@
       0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(0,245,160,0.4); }
       50%       { opacity: 0.7; box-shadow: 0 0 0 5px rgba(0,245,160,0); }
     }
+    @keyframes pulse-dot-blue {
+      0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(0,180,216,0.4); }
+      50%       { opacity: 0.7; box-shadow: 0 0 0 5px rgba(0,180,216,0); }
+    }
 
     /* ── Header ─────────────────────────────────────── */
     header {
@@ -858,9 +862,13 @@
       <span class="network-bar-label">This Device Label:</span>
       <input type="text" id="device-name-input" class="device-name-input" placeholder="Device Label" />
     </div>
-    <div class="devices-badge" id="devices-badge">
+    <div class="devices-badge" id="scanners-badge">
       <div class="devices-dot"></div>
-      <span id="devices-count">1</span>&nbsp;online
+      <span id="scanners-count">0 scanners online</span>
+    </div>
+    <div class="devices-badge" id="dashboards-badge" style="background: rgba(0,180,216,0.08); border-color: rgba(0,180,216,0.2); color: var(--accent2);">
+      <div class="devices-dot" style="background: var(--accent2); animation: pulse-dot-blue 2s ease infinite;"></div>
+      <span id="dashboards-count">0 dashboards online</span>
     </div>
   </div>
 
@@ -944,6 +952,7 @@
         <div class="attendee-field">Email &nbsp;&nbsp; <span id="att-email">—</span></div>
         <div class="attendee-field">Reg No &nbsp; <span id="att-reg">—</span></div>
         <div class="attendee-field">Status &nbsp;&nbsp; <span id="att-status">—</span></div>
+        <div class="attendee-field">Scan Time &nbsp; <span id="att-scan-time">—</span></div>
         <div class="attendee-source" id="att-source"></div>
       </div>
       <div style="color:var(--muted); font-size:0.85rem; margin-top:16px; line-height:1.6;" id="att-empty">
@@ -1088,19 +1097,43 @@
     return `${os} ${br}`;
   }
 
+  // Cookie persistence helper functions (1-year expiration fallback)
+  function setCookie(name, value, days) {
+    let expires = "";
+    if (days) {
+      const date = new Date();
+      date.setTime(date.getTime() + (days * 24 * 60 * 60 * 1000));
+      expires = "; expires=" + date.toUTCString();
+    }
+    document.cookie = name + "=" + (value || "") + expires + "; path=/; SameSite=Lax";
+  }
+
+  function getCookie(name) {
+    const nameEQ = name + "=";
+    const ca = document.cookie.split(';');
+    for (let i = 0; i < ca.length; i++) {
+      let c = ca[i];
+      while (c.charAt(0) === ' ') c = c.substring(1, c.length);
+      if (c.indexOf(nameEQ) === 0) return c.substring(nameEQ.length, c.length);
+    }
+    return null;
+  }
+
   // Set up local device registration info
   const devNameInput = document.getElementById('device-name-input');
-  let deviceId = localStorage.getItem('device_id');
+  let deviceId = localStorage.getItem('device_id') || getCookie('device_id');
   if (!deviceId) {
     deviceId = 'dev_' + Math.random().toString(36).substr(2, 9);
-    localStorage.setItem('device_id', deviceId);
   }
+  localStorage.setItem('device_id', deviceId);
+  setCookie('device_id', deviceId, 365);
   
-  let deviceName = localStorage.getItem('device_name');
+  let deviceName = localStorage.getItem('device_name') || getCookie('device_name');
   if (!deviceName) {
     deviceName = getDeviceType() + " Scanner";
-    localStorage.setItem('device_name', deviceName);
   }
+  localStorage.setItem('device_name', deviceName);
+  setCookie('device_name', deviceName, 365);
   devNameInput.value = deviceName;
 
 
@@ -1207,6 +1240,7 @@
     document.getElementById('att-email').textContent  = details.Email || '—';
     document.getElementById('att-reg').textContent    = details['Registration Number'] || '—';
     document.getElementById('att-status').textContent = details.Status || '—';
+    document.getElementById('att-scan-time').textContent = details.ScanTime || '—';
     const srcEl = document.getElementById('att-source');
     srcEl.textContent = source ? `Scanned via ${source}` : '';
   }
@@ -1224,7 +1258,14 @@
   function addLocalHistory(details, type) {
     if (!details || !details.Name) return;
     const history = getLocalHistory();
-    const timestamp = new Date().toLocaleTimeString('en-IN', { hour:'2-digit', minute:'2-digit', second:'2-digit' });
+    const now = new Date();
+    const pad = (n) => String(n).padStart(2, '0');
+    const timestamp = now.getFullYear() + '-' +
+                      pad(now.getMonth() + 1) + '-' +
+                      pad(now.getDate()) + ' ' +
+                      pad(now.getHours()) + ':' +
+                      pad(now.getMinutes()) + ':' +
+                      pad(now.getSeconds());
     history.unshift({
       name: details.Name,
       reg_no: details['Registration Number'] || '—',
@@ -1280,6 +1321,7 @@
     const phoneEl = document.getElementById('verify-phone');
     const statusEl = document.getElementById('verify-status');
     const countEl = document.getElementById('verify-count');
+    const scanTimeEl = document.getElementById('verify-scan-time');
     const customContainer = document.getElementById('verify-custom-fields');
     
     if (statusType === 'warn') {
@@ -1299,6 +1341,9 @@
     phoneEl.textContent = details.Phone || '—';
     statusEl.textContent = details.Status || '—';
     countEl.textContent = details.ScanCount || '—';
+    if (scanTimeEl) {
+      scanTimeEl.textContent = details.ScanTime || '—';
+    }
     
     customContainer.innerHTML = '';
     if (details.custom_fields) {
@@ -1500,10 +1545,17 @@
           render: (row) => {
             const name = row.attendee_name || row['QR Data'];
             const reg = row.reg_no || '';
-            if (reg && reg !== 'Unknown') {
-              return `<div><strong>${escapeHtml(name)}</strong><br/><small style="color:var(--muted); font-size:0.75rem;">${escapeHtml(reg)}</small></div>`;
+            const email = row.email || '';
+            let html = `<div style="display: flex; flex-direction: column; gap: 2px;">`;
+            html += `<strong>${escapeHtml(name)}</strong>`;
+            if (reg && reg !== 'Unknown' && reg !== name) {
+              html += `<span style="font-size: 0.72rem; color: var(--accent2); font-family: var(--mono);">${escapeHtml(reg)}</span>`;
             }
-            return `<div><strong>${escapeHtml(name)}</strong></div>`;
+            if (email) {
+              html += `<span style="font-size: 0.72rem; color: var(--muted);">${escapeHtml(email)}</span>`;
+            }
+            html += `</div>`;
+            return html;
           }
         },
         {
@@ -1647,7 +1699,17 @@
     if (newName) {
       deviceName = newName;
       localStorage.setItem('device_name', newName);
+      setCookie('device_name', newName, 365);
       socket.emit('rename_device', { device_id: deviceId, name: newName });
+    }
+  });
+
+  socket.on('device_renamed', data => {
+    if (data.device_id === deviceId) {
+      deviceName = data.name;
+      localStorage.setItem('device_name', data.name);
+      setCookie('device_name', data.name, 365);
+      devNameInput.value = data.name;
     }
   });
 
@@ -1680,6 +1742,7 @@
       'QR Data':        row.qr_data,
       'attendee_name':  row.attendee_name || '',
       'reg_no':         row.reg_no || '',
+      'email':          row.email || '',
       'Scan Count':     row.scan_count,
       'Last Timestamp': row.last_timestamp,
       'Last Device':    row.last_device,
@@ -1717,7 +1780,11 @@
 
   // ── clients_count: show how many devices are online ───────────────────────
   socket.on('clients_count', data => {
-    document.getElementById('devices-count').textContent = data.count;
+    const scanners = typeof data.scanners_count !== 'undefined' ? data.scanners_count : 0;
+    const dashboards = typeof data.dashboards_count !== 'undefined' ? data.dashboards_count : 0;
+    
+    document.getElementById('scanners-count').textContent = `${scanners} scanner${scanners !== 1 ? 's' : ''} online`;
+    document.getElementById('dashboards-count').textContent = `${dashboards} dashboard${dashboards !== 1 ? 's' : ''} online`;
   });
 
   // ── devices_updated: render card grid of all connected devices ─────────────
@@ -1797,6 +1864,13 @@
   socket.on('connect',    () => {
     setStatus('Connected. Scanning…');
     socket.emit('register_device', { device_id: deviceId, device_name: deviceName });
+    fetch('/stats')
+      .then(r => r.json())
+      .then(updateStats)
+      .catch(() => {});
+    if (typeof csvTable !== 'undefined' && csvTable.ajax) {
+      csvTable.ajax.reload(null, false);
+    }
   });
 </script>
 
@@ -1812,6 +1886,7 @@
       <div class="verify-field-item">Phone: <span id="verify-phone">—</span></div>
       <div class="verify-field-item">Status: <span id="verify-status">—</span></div>
       <div class="verify-field-item">Scan Count: <span id="verify-count">—</span></div>
+      <div class="verify-field-item">Scan Time: <span id="verify-scan-time">—</span></div>
       <div id="verify-custom-fields" style="display: flex; flex-direction: column; gap: 8px; margin-top: 10px; border-top: 1px dashed var(--border); padding-top: 10px;">
         <!-- Custom fields dynamically loaded -->
       </div>

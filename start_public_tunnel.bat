@@ -18,5 +18,5 @@ echo    2. Open that URL on any phone or tablet on cellular data.
 echo    3. Keep this window open. Closing it will terminate the tunnel.
 echo.
 echo ==========================================================
-ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=NUL -R 80:127.0.0.1:5001 nokey@localhost.run
+ssh -T -o StrictHostKeyChecking=no -o UserKnownHostsFile=NUL -o ServerAliveInterval=30 -o ServerAliveCountMax=3 -R 80:127.0.0.1:5001 nokey@localhost.run
 pause
