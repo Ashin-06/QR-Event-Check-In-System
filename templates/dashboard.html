@@ -6406,7 +6406,7 @@
     
     const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
     iframeDoc.open();
-    iframeDoc.write(\`
+    iframeDoc.write(`
       <!DOCTYPE html>
       <html>
       <head>
@@ -6426,14 +6426,14 @@
             height: 540px;
             overflow: hidden;
           }
-          \${cssContent}
+          ${cssContent}
         </style>
       </head>
       <body>
-        \${htmlContent}
+        ${htmlContent}
       </body>
       </html>
-    \`);
+    `);
     iframeDoc.close();
     
     // Setup event handlers and contenteditable inside Iframe Document
@@ -6446,15 +6446,15 @@
         const cardWrapper = doc.body.firstElementChild;
         if (cardWrapper) {
           window.designerConfig.fields.forEach((f, idx) => {
-            let fieldEl = doc.getElementById(\`preview-field-\${idx}\`);
+            let fieldEl = doc.getElementById(`preview-field-${idx}`);
             if (!fieldEl) {
               fieldEl = doc.createElement('div');
-              fieldEl.id = \`preview-field-\${idx}\`;
+              fieldEl.id = `preview-field-${idx}`;
               fieldEl.className = 'preview-absolute-field';
               cardWrapper.appendChild(fieldEl);
             }
             
-            const rgbToCss = (rgb) => rgb ? \`rgb(\${rgb.join(',')})\` : 'rgb(255,255,255)';
+            const rgbToCss = (rgb) => rgb ? `rgb(${rgb.join(',')})` : 'rgb(255,255,255)';
             const scaleX = 340 / 600;
             const scaleY = 540 / 900;
             const x = Math.round(f.x * scaleX);
@@ -6462,9 +6462,9 @@
             
             fieldEl.textContent = f.text || '';
             fieldEl.style.position = 'absolute';
-            fieldEl.style.fontSize = \`\${Math.round(f.font_size * 0.6)}px\`;
+            fieldEl.style.fontSize = `${Math.round(f.font_size * 0.6)}px`;
             fieldEl.style.color = rgbToCss(f.color);
-            fieldEl.style.top = \`\${y}px\`;
+            fieldEl.style.top = `${y}px`;
             fieldEl.style.zIndex = '50';
             
             if (f.align === 'center') {
@@ -6472,11 +6472,11 @@
               fieldEl.style.width = '100%';
               fieldEl.style.textAlign = 'center';
             } else if (f.align === 'left') {
-              fieldEl.style.left = \`\${x}px\`;
+              fieldEl.style.left = `${x}px`;
               fieldEl.style.width = 'auto';
               fieldEl.style.textAlign = 'left';
             } else if (f.align === 'right') {
-              fieldEl.style.right = \`\${340 - x}px\`;
+              fieldEl.style.right = `${340 - x}px`;
               fieldEl.style.width = 'auto';
               fieldEl.style.textAlign = 'right';
             }
