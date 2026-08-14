@@ -5,7 +5,7 @@
 <meta charset="utf-8"/>
 <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
 <title>Manager Control Center</title>
-<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&amp;family=Inter:wght@400;500;600;700;800&amp;family=JetBrains+Mono:wght@400;500;600&amp;display=swap" rel="stylesheet"/>
 <link href="/static/css/jquery.dataTables.min.css" rel="stylesheet"/>
 <style>
     :root {
@@ -20,7 +20,7 @@
       --success-bg: rgba(0,245,160,0.10);
       --warn-bg:    rgba(255,107,53,0.12);
       --radius:   16px;
-      --font:     'Syne', sans-serif;
+      --font:     'Plus Jakarta Sans', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
       --mono:     'JetBrains Mono', monospace;
 
       /* Added dynamic colors */
@@ -2638,10 +2638,15 @@ Distribution of check-in arrivals over time.
       if (mainTabRegistryContent) mainTabRegistryContent.classList.remove('active');
       if (mainTabDesignerContent) mainTabDesignerContent.classList.add('active');
       
-      // Update ID Card Preview once when designer tab is shown
-      if (typeof window.updateIDCardPreview === 'function') {
-        window.updateIDCardPreview();
-      }
+      // Immediately render preview when switching to designer
+      setTimeout(() => {
+        if (typeof window.renderDesignerPreview === 'function') {
+          window.renderDesignerPreview();
+        }
+        if (typeof window.updateIDCardPreview === 'function') {
+          window.updateIDCardPreview();
+        }
+      }, 50);
     }
   }
 
