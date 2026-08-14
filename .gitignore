@@ -14,3 +14,16 @@ instance/
 dist/
 build/
 *.egg-info/
+chrome_profile/
+scratch/
+*.bak
+*.truncated
+test_*.png
+test_1.png
+test_2.png
+test_real_1.png
+test_real_2.png
+test_html2image.png
+feature_diff.txt
+html_diff.txt
+results.txt

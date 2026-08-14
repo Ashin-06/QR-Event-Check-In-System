@@ -1321,6 +1321,12 @@
       background: rgba(0, 180, 245, 0.16);
       border-color: var(--accent2);
     }
+    #csv-table tbody tr {
+      cursor: pointer;
+    }
+    #csv-table tbody tr:hover {
+      background: rgba(255, 255, 255, 0.03) !important;
+    }
     </style>
 </head>
 <body>
@@ -1339,7 +1345,7 @@
 </ul>
 </div>
 </div><div class="panel" style="margin-bottom: 20px;">
-<div class="panel-title">📡 Public Internet Tunnel</div>
+<div class="panel-title">📡 Public Internet Tunnel <span class="info-btn" data-tooltip="Expose your local server securely over the internet so volunteer phones on cellular data can scan passes.">i</span></div>
 <div style="font-size: 0.78rem; color: var(--muted); line-height: 1.4; margin-bottom: 12px;">
           Expose your local dashboard to the internet so scanners on other networks can connect.
         </div>
@@ -1361,7 +1367,7 @@
 </div>
 <button class="ops-btn" id="btn-toggle-tunnel" style="margin: 0;">Start Public Tunnel</button>
 </div><div class="panel" style="margin-bottom: 20px;">
-<div class="panel-title">🔒 Dashboard Sharing &amp; Access</div>
+<div class="panel-title">🔒 Dashboard Sharing &amp; Access <span class="info-btn" data-tooltip="Share passcode-protected manager access with co-organizers via local network (LAN) or public web link.">i</span></div>
 <div style="font-size: 0.78rem; color: var(--muted); line-height: 1.4; margin-bottom: 12px;">
           Share access to this manager dashboard with other organizers. Passcode-protected access is enabled by default.
         </div>
@@ -1399,12 +1405,12 @@
 </div><div class="panel" style="margin-bottom: 20px;">
 <div class="panel-title">🛠️ Registry Operations</div>
 <div class="ops-tabs">
-<button class="ops-tab-btn active" id="ops-tab-add-btn">Add Guest</button>
-<button class="ops-tab-btn" id="ops-tab-import-btn">Import Spreadsheet</button>
-<button class="ops-tab-btn" id="ops-tab-email-btn">Bulk Send</button>
-<button class="ops-tab-btn" id="ops-tab-settings-btn">Settings &amp; Templates</button>
-<button class="ops-tab-btn" id="ops-tab-tools-btn">Clean &amp; QR Tools</button>
-<button class="ops-tab-btn" id="ops-tab-quarantine-btn" style="position: relative;">Quarantine <span id="quarantine-badge" style="display: none; background: #ff4b4b; color: white; border-radius: 50%; padding: 1px 6px; font-size: 0.62rem; position: absolute; top: -6px; right: -6px; font-weight: bold;">0</span></button>
+<button class="ops-tab-btn active" id="ops-tab-add-btn">Add Guest <span class="info-btn" data-tooltip="Instantly register a single attendee into the database with auto-generated QR code, barcode, and ID badge.">i</span></button>
+<button class="ops-tab-btn" id="ops-tab-import-btn">Import Spreadsheet <span class="info-btn" data-tooltip="Upload CSV or Excel rosters with automatic column detection, duplicate resolution, and batch QR code creation.">i</span></button>
+<button class="ops-tab-btn" id="ops-tab-email-btn">Bulk Send <span class="info-btn" data-tooltip="Broadcast personalized passes with attached QR codes via Email, WhatsApp, or SMS campaigns.">i</span></button>
+<button class="ops-tab-btn" id="ops-tab-settings-btn">Settings &amp; Templates <span class="info-btn" data-tooltip="Configure check-in time restrictions, custom email/SMS template placeholders, and sound alert themes.">i</span></button>
+<button class="ops-tab-btn" id="ops-tab-tools-btn">Clean &amp; QR Tools <span class="info-btn" data-tooltip="Regenerate missing QR/Barcode assets, clean duplicate database entries, and review security audit logs.">i</span></button>
+<button class="ops-tab-btn" id="ops-tab-quarantine-btn" style="position: relative;">Quarantine <span class="info-btn" data-tooltip="Review and approve unrecognized or duplicate QR scans with 1-click self-healing auto-registration.">i</span> <span id="quarantine-badge" style="display: none; background: #ff4b4b; color: white; border-radius: 50%; padding: 1px 6px; font-size: 0.62rem; position: absolute; top: -6px; right: -6px; font-weight: bold;">0</span></button>
 </div>
 <!-- Tab 1: Add Guest Form -->
 <div class="ops-tab-content active" id="ops-tab-add-content">
@@ -1418,13 +1424,13 @@
 <div class="ops-tab-content" id="ops-tab-import-content">
 <form id="import-csv-form" onsubmit="return false;">
 <div class="form-group">
-<label class="form-label">Upload Spreadsheet File (CSV/Excel)</label>
+<label class="form-label">Upload Spreadsheet File (CSV/Excel) <span class="info-btn info-down" data-tooltip="Upload any .xlsx or .csv roster. Columns for Name, Email, Reg No, and Phone are auto-detected.">i</span></label>
 <input accept=".csv,.xlsx" class="form-input" id="import-csv-file" required="" type="file"/>
 <div style="font-size:0.68rem; color:var(--muted); margin-top:2px;">Must contain columns: Name, Email Address, Registration Number. Phone is optional.</div>
 </div>
 <!-- Destination Type Selectors -->
 <div class="form-group" style="margin-bottom: 12px;">
-<label class="form-label">Import Destination</label>
+<label class="form-label">Import Destination <span class="info-btn info-down" data-tooltip="Import directly into the active event or create a fresh isolated event folder.">i</span></label>
 <div style="display: flex; gap: 12px; margin-top: 4px;">
 <label style="font-size: 0.78rem; cursor: pointer; display: flex; align-items: center; gap: 4px;">
 <input checked="" name="import-dest-type" type="radio" value="current"/>
@@ -1450,15 +1456,15 @@
 <!-- Tab 3: Bulk Send campaigns -->
 <div class="ops-tab-content" id="ops-tab-email-content">
 <div style="display:flex; gap:6px; margin-bottom:14px; background:rgba(255,255,255,0.02); padding:4px; border-radius:8px; border:1px solid var(--border);">
-<button class="ops-tab-btn active" id="subtab-email-btn" style="flex:1; padding:6px 0; font-size: 0.72rem;">📧 Email</button>
-<button class="ops-tab-btn" id="subtab-whatsapp-btn" style="flex:1; padding:6px 0; font-size: 0.72rem;">💬 WhatsApp</button>
-<button class="ops-tab-btn" id="subtab-sms-btn" style="flex:1; padding:6px 0; font-size: 0.72rem;">📱 SMS</button>
+<button class="ops-tab-btn active" id="subtab-email-btn" style="flex:1; padding:6px 0; font-size: 0.72rem;">📧 Email <span class="info-btn" data-tooltip="Send bulk emails with attached QR codes and printable badges using Gmail SMTP or custom mail server.">i</span></button>
+<button class="ops-tab-btn" id="subtab-whatsapp-btn" style="flex:1; padding:6px 0; font-size: 0.72rem;">💬 WhatsApp <span class="info-btn" data-tooltip="Broadcast passes via Twilio, Meta Cloud API, or one-click manual WhatsApp web links.">i</span></button>
+<button class="ops-tab-btn" id="subtab-sms-btn" style="flex:1; padding:6px 0; font-size: 0.72rem;">📱 SMS <span class="info-btn" data-tooltip="Send personalized SMS text passes using a connected Android SMS Gateway phone or Twilio SMS.">i</span></button>
 </div>
 <!-- Channel 1: Email Form -->
 <div id="subtab-email-content">
 <form id="send-emails-form" onsubmit="return false;">
 <div class="form-group">
-<label class="form-label">Sender Gmail</label>
+<label class="form-label">Sender Gmail <span class="info-btn info-down" data-tooltip="Your Gmail address used to dispatch attendee invitation passes.">i</span></label>
 <input class="form-input" id="email-sender" placeholder="e.g. you@gmail.com" required="" type="email"/>
 </div>
 <div class="form-group">
@@ -1513,7 +1519,7 @@
 <div id="subtab-whatsapp-content" style="display:none;">
 <form id="send-whatsapp-form" onsubmit="return false;">
 <div class="form-group">
-<label class="form-label">WhatsApp Provider</label>
+<label class="form-label">WhatsApp Provider <span class="info-btn info-down" data-tooltip="Select how WhatsApp passes are sent (Twilio WhatsApp API, Meta Cloud API, or 1-Click WhatsApp Web links).">i</span></label>
 <select class="form-input" id="wa-provider" style="background: var(--bg-card); color: var(--text); border-color: var(--border);">
 <option value="manual">Manual (WhatsApp Web / App Link)</option>
 <option value="twilio">Twilio WhatsApp Sandbox</option>
@@ -1600,7 +1606,7 @@
 <div id="subtab-sms-content" style="display:none;">
 <form id="send-sms-form" onsubmit="return false;">
 <div class="form-group">
-<label class="form-label">SMS Provider</label>
+<label class="form-label">SMS Provider <span class="info-btn info-down" data-tooltip="Send free SMS via connected local Android phone gateway or via paid Twilio SMS API.">i</span></label>
 <select class="form-input" id="sms-provider" style="background: var(--bg-card); color: var(--text); border-color: var(--border);">
 <option value="android">Android SMS Gateway (App)</option>
 <option value="twilio">Twilio API (Paid)</option>
@@ -1746,21 +1752,21 @@
 <div style="font-size: 0.75rem; font-weight: 700; color: var(--accent); margin-bottom: 12px; text-transform: uppercase;">Check-In Time Restrictions</div>
 <div style="display: flex; gap: 16px; flex-wrap: wrap;">
 <div class="form-group" style="flex: 1; min-width: 200px;">
-<label class="form-label">Check-In Allowed Start Date (Optional)</label>
+<label class="form-label">Check-In Allowed Start Date (Optional) <span class="info-btn info-down" data-tooltip="Earliest date attendees are allowed to check in. Scans before this will be flagged as early.">i</span></label>
 <input class="form-input" id="cfg-start-date" type="date"/>
 </div>
 <div class="form-group" style="flex: 1; min-width: 200px;">
-<label class="form-label">Check-In Allowed Start Time (Optional)</label>
+<label class="form-label">Check-In Allowed Start Time (Optional) <span class="info-btn info-down" data-tooltip="Earliest time of day allowed for scanning.">i</span></label>
 <input class="form-input" id="cfg-start-time" type="time"/>
 </div>
 </div>
 <div style="display: flex; gap: 16px; flex-wrap: wrap; margin-top: 10px;">
 <div class="form-group" style="flex: 1; min-width: 200px;">
-<label class="form-label">Check-In Allowed End Date (Optional)</label>
+<label class="form-label">Check-In Allowed End Date (Optional) <span class="info-btn info-down" data-tooltip="Latest date attendees are allowed to check in.">i</span></label>
 <input class="form-input" id="cfg-end-date" type="date"/>
 </div>
 <div class="form-group" style="flex: 1; min-width: 200px;">
-<label class="form-label">Check-In Allowed End Time (Optional)</label>
+<label class="form-label">Check-In Allowed End Time (Optional) <span class="info-btn info-down" data-tooltip="Latest time of day allowed for scanning.">i</span></label>
 <input class="form-input" id="cfg-end-time" type="time"/>
 </div>
 </div>
@@ -1776,7 +1782,7 @@
 <label class="form-label" for="cfg-enable-id-card" style="margin: 0; cursor: pointer; font-size: 0.8rem; font-weight: normal; user-select: none;">Enable ID Card Generation (Compile attendee data &amp; QR into PDF/PNG)</label>
 </div>
 <div class="form-group" id="id-card-theme-group" style="margin-top: 10px;">
-<label class="form-label">ID Card Theme</label>
+<label class="form-label">ID Card Theme <span class="info-btn info-down" data-tooltip="Select the global visual color palette and background geometry for attendee ID badges.">i</span></label>
 <select class="form-input" id="cfg-id-card-theme" style="cursor: pointer;">
 <option value="auto">Auto-detect based on Event Name</option>
 <option value="cyber_neon">Neon Cyberpunk (Dark Blue/Cyan/Pink)</option>
@@ -1803,14 +1809,34 @@
 <!-- ID Card Customizer Container -->
 <div id="id-card-customizer-container" style="display: none; margin-top: 15px; border: 1px solid var(--border); border-radius: 8px; padding: 12px; background: rgba(255, 255, 255, 0.01);">
 <div style="font-size: 0.72rem; font-weight: 700; color: var(--accent); margin-bottom: 10px; text-transform: uppercase;">ID Card Template &amp; Layout Customizer</div>
-<div style="display: flex; gap: 12px; flex-wrap: wrap;">
-<div class="form-group" style="flex: 1; min-width: 180px;">
+<div style="display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 10px;">
+<div class="form-group" style="flex: 1; min-width: 150px; margin-bottom: 0;">
 <label class="form-label">Header Override Text</label>
 <input class="form-input" id="cfg-id-card-header" placeholder="e.g. ANNUAL CONFERENCE" type="text"/>
 </div>
-<div class="form-group" style="flex: 1; min-width: 180px;">
+<div class="form-group" style="flex: 1; min-width: 150px; margin-bottom: 0;">
 <label class="form-label">Footer Override Text</label>
 <input class="form-input" id="cfg-id-card-footer" placeholder="e.g. SHOW BADGE AT GATE" type="text"/>
+</div>
+</div>
+<div style="display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 10px;">
+<div class="form-group" style="flex: 1.2; min-width: 180px; margin-bottom: 0;">
+<label class="form-label">Profile Photo Display Option <span class="info-btn info-down" data-tooltip="Choose how attendee photos are rendered (Google Drive/URL link, initials fallback, or hide container).">i</span></label>
+<select class="form-input" id="cfg-id-card-photo-option" style="height: 36px; padding: 6px 10px;">
+<option value="image_needed">📸 Image Needed (Show photo, initials fallback)</option>
+<option value="always_initials">🔤 No Image (Always show initials)</option>
+<option value="hide_photo">🚫 No Image (Hide photo container)</option>
+</select>
+</div>
+<div class="form-group" style="flex: 0.8; min-width: 180px; margin-bottom: 0;">
+<label class="form-label">Global Logo Image <span class="info-btn info-down" data-tooltip="Upload an event or company PNG/JPEG logo to appear at the top of all generated badges.">i</span></label>
+<div style="display: flex; gap: 8px; align-items: center; height: 36px;">
+<input class="form-input" id="cfg-global-logo-input" type="file" accept="image/*" style="display: none;" onchange="window.uploadGlobalLogo(this)"/>
+<button type="button" class="download-btn" onclick="document.getElementById('cfg-global-logo-input').click()" style="margin: 0; padding: 7px 10px; font-size: 0.72rem; display: flex; align-items: center; gap: 4px; border-color: var(--accent); color: var(--accent);">
+📤 Upload Logo
+</button>
+<img id="cfg-global-logo-preview" src="/static/uploads/logo.png" style="height: 32px; max-width: 60px; object-fit: contain; border-radius: 4px; background: rgba(255,255,255,0.05); display: block;" onerror="this.style.display='none'" onload="this.style.display='block'"/>
+</div>
 </div>
 </div>
 <div style="margin-top: 10px;">
@@ -2020,15 +2046,15 @@
 <!-- Stats -->
 <div class="stats-row">
 <div class="stat-card total" id="card-total">
-<div class="stat-label">Total Scans</div>
+<div class="stat-label">Total Scans <span class="info-btn info-down" data-tooltip="Total number of scan attempts recorded across all connected scanners and webcams.">i</span></div>
 <div class="stat-value" id="stat-total">—</div>
 </div>
 <div class="stat-card unique" id="card-unique">
-<div class="stat-label">Unique Check-ins</div>
+<div class="stat-label">Unique Check-ins <span class="info-btn info-down" data-tooltip="Total unique registered attendees successfully checked in.">i</span></div>
 <div class="stat-value" id="stat-unique">—</div>
 </div>
 <div class="stat-card dup" id="card-dup">
-<div class="stat-label">Duplicate Scans</div>
+<div class="stat-label">Duplicate Scans <span class="info-btn info-down" data-tooltip="Count of repeated scan attempts by attendees who have already checked in.">i</span></div>
 <div class="stat-value" id="stat-dup">—</div>
 </div>
 </div>
@@ -2037,8 +2063,8 @@
 <!-- Live Check-In Log Table -->
 <!-- Attendee Master Registry Table -->
 <!-- Custom Named Groups Panel -->
-<div style="margin-bottom: 20px; border-bottom: 1px solid var(--border); padding-bottom: 10px; display: flex; gap: 8px; flex-wrap: wrap;"><button class="main-tab-btn active" id="main-tab-checkin-btn">📋 Check-In &amp; Logs</button><button class="main-tab-btn" id="main-tab-registry-btn">👥 Guest Registry &amp; Groups</button><button class="main-tab-btn" id="main-tab-designer-btn">🎨 ID Card &amp; Communications Hub</button></div><div class="main-tab-content active" id="main-tab-checkin-content"><div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 20px; margin-bottom: 20px;"><div class="panel" style="margin-bottom: 20px;">
-<div class="panel-title">Last Checked In</div>
+<div style="margin-bottom: 20px; border-bottom: 1px solid var(--border); padding-bottom: 10px; display: flex; gap: 8px; flex-wrap: wrap;"><button class="main-tab-btn active" id="main-tab-checkin-btn">📋 Check-In &amp; Logs <span class="info-btn" data-tooltip="Live scanning monitor, arrival timeline graph, recent attendee card, and real-time scan logs.">i</span></button><button class="main-tab-btn" id="main-tab-registry-btn">👥 Guest Registry &amp; Groups <span class="info-btn" data-tooltip="Master attendee roster with search, Overseer Hub profile editor, custom groups, ID card downloads, and check-in overrides.">i</span></button><button class="main-tab-btn" id="main-tab-designer-btn">🎨 ID Card &amp; Communications Hub <span class="info-btn" data-tooltip="Drag-and-drop ID badge designer with Google Fonts, custom templates, Google Drive photo links, and instant print preview.">i</span></button></div><div class="main-tab-content active" id="main-tab-checkin-content"><div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 20px; margin-bottom: 20px;"><div class="panel" style="margin-bottom: 20px;">
+<div class="panel-title">Last Checked In <span class="info-btn" data-tooltip="Displays attendee details and scan timestamp of the most recent check-in across all devices.">i</span></div>
 <div id="att-empty" style="color:var(--muted); font-size:0.82rem; line-height:1.5;">
           Waiting for check-ins... Scans from all active devices will display here.
         </div>
@@ -2051,10 +2077,25 @@
 <div class="attendee-source" id="att-source"></div>
 </div>
 </div><div class="panel" style="margin-bottom: 20px;">
-<div class="panel-title">📈 Peak Arrivals Timeline</div>
+<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; flex-wrap: wrap; gap: 8px;">
+<div class="panel-title" style="margin-bottom: 0;">📈 Peak Arrivals Timeline <span class="info-btn" data-tooltip="Real-time arrival velocity chart showing attendee check-in volume across customizable 5m, 15m, 30m, and 60m intervals.">i</span></div>
+<div style="display: flex; align-items: center; gap: 6px;">
+<span style="font-size: 0.68rem; color: var(--muted); font-weight: bold; text-transform: uppercase;">Interval:</span>
+<select id="timeline-interval-select" onchange="window.renderArrivalsTimeline()" style="background: rgba(255,255,255,0.06); border: 1px solid var(--border); border-radius: 6px; padding: 3px 6px; font-family: var(--font); font-size: 0.72rem; color: var(--text); outline: none; cursor: pointer;">
+<option value="5m">5 Minutes</option>
+<option value="10m">10 Minutes</option>
+<option value="30m">30 Minutes</option>
+<option value="1h" selected>1 Hour</option>
+<option value="2h">2 Hours</option>
+<option value="4h">4 Hours</option>
+<option value="6h">6 Hours</option>
+<option value="1d">Daily</option>
+</select>
+</div>
+</div>
 <div style="font-size: 0.74rem; color: var(--muted); margin-bottom: 8px;">
-          Hourly distribution of successful check-ins.
-        </div>
+Distribution of check-in arrivals over time.
+</div>
 <div id="timeline-chart-container" style="background: rgba(0,0,0,0.15); border: 1px solid var(--border); border-radius: 8px; padding: 10px;">
 <div style="text-align: center; color: var(--muted); font-size: 0.8rem; padding: 20px 0;">No check-ins recorded yet.</div>
 </div>
@@ -2086,7 +2127,26 @@
 <option value="60">Last 1 Hour</option>
 </select>
 </div>
-<button id="reset-log-filters" onmouseout="this.style.borderColor='var(--border)'; this.style.color='var(--muted)'" onmouseover="this.style.borderColor='rgba(255,255,255,0.20)'; this.style.color='var(--text)'" style="background: transparent; border: 1px solid var(--border); border-radius: 6px; padding: 5px 10px; font-family: var(--font); font-size: 0.72rem; font-weight: 700; color: var(--muted); cursor: pointer; transition: all 0.2s; margin-top: 11px;">Reset Filters</button>
+<div style="display: flex; flex-direction: column; gap: 3px;">
+<label style="font-size: 0.60rem; font-weight: 700; text-transform: uppercase; color: var(--muted);">Subgroup</label>
+<select id="filter-log-subgroup" style="background: rgba(255,255,255,0.06); border: 1px solid var(--border); border-radius: 6px; padding: 4px 8px; font-family: var(--font); font-size: 0.76rem; color: var(--text); outline: none; min-width: 130px; cursor: pointer;">
+<option value="">All Subgroups</option>
+</select>
+</div>
+<div style="display: flex; flex-direction: column; gap: 3px;">
+<label style="font-size: 0.60rem; font-weight: 700; text-transform: uppercase; color: var(--muted);">Check-In Status</label>
+<select id="filter-log-status" style="background: rgba(255,255,255,0.06); border: 1px solid var(--border); border-radius: 6px; padding: 4px 8px; font-family: var(--font); font-size: 0.76rem; color: var(--text); outline: none; min-width: 140px; cursor: pointer;">
+<option value="">All Outcomes</option>
+<option value="scanned">Scanned (Checked In)</option>
+<option value="Scanned Outside Time">Scanned Outside Time</option>
+<option value="Manual Check-In">Manual Check-In</option>
+<option value="not-scanned">Not Scanned</option>
+<option value="Quarantined">Quarantined</option>
+</select>
+</div>
+<div style="display: flex; flex-direction: column; gap: 3px; margin-top: auto;">
+<button id="reset-log-filters" class="ops-btn" style="width: auto; margin: 0; padding: 6px 12px; font-size: 0.72rem; border-color: var(--border); color: var(--muted); background: transparent; height: 32px; border-radius: 6px; cursor: pointer;">Reset Filters</button>
+</div>
 </div>
 <div style="overflow-x: auto; width: 100%;">
 <table class="display" id="csv-table" style="width:100%">
@@ -2111,18 +2171,54 @@
 <button id="bulk-email-all-btn" onclick="window.bulkNotifyAll('email')" onmouseout="this.style.background='rgba(0,245,160,0.08)'" onmouseover="this.style.background='rgba(0,245,160,0.15)'" style="background: rgba(0,245,160,0.08); color: var(--accent); border: 1px solid rgba(0,245,160,0.25); border-radius: 8px; padding: 5px 12px; font-size: 0.72rem; font-weight: 700; cursor: pointer; font-family: var(--font); transition: all 0.2s;">📧 Email All</button>
 <button id="bulk-wa-all-btn" onclick="window.bulkNotifyAll('whatsapp')" onmouseout="this.style.background='rgba(0,245,160,0.08)'" onmouseover="this.style.background='rgba(0,245,160,0.15)'" style="background: rgba(0,245,160,0.08); color: var(--accent); border: 1px solid rgba(0,245,160,0.25); border-radius: 8px; padding: 5px 12px; font-size: 0.72rem; font-weight: 700; cursor: pointer; font-family: var(--font); transition: all 0.2s;">💬 WA All</button>
 <button id="btn-force-quarantine" onclick="window.forceQuarantineSelected()" style="background: rgba(239,68,68,0.08); color: #ef4444; border: 1px solid rgba(239,68,68,0.25); border-radius: 8px; padding: 5px 12px; font-size: 0.72rem; font-weight: 700; cursor: pointer; font-family: var(--font); transition: all 0.2s;">🚫 Quarantine</button>
-</div>
-</div>
+<button id="btn-open-overseer-hub" onclick="window.openVerifyHub()" onmouseout="this.style.background='rgba(139,92,246,0.08)'" onmouseover="this.style.background='rgba(139,92,246,0.15)'" style="background: rgba(139,92,246,0.08); color: #8b5cf6; border: 1px solid rgba(139,92,246,0.25); border-radius: 8px; padding: 5px 12px; font-size: 0.72rem; font-weight: 700; cursor: pointer; font-family: var(--font); transition: all 0.2s;">🔍 Overseer Hub</button>
+</div></div>
 <!-- Filter Bar -->
 <div style="display: flex; gap: 14px; margin-bottom: 16px; padding: 12px; background: rgba(255,255,255,0.02); border: 1px solid var(--border); border-radius: 10px; align-items: center; flex-wrap: wrap;">
 <span style="font-size: 0.72rem; font-weight: 700; text-transform: uppercase; color: var(--muted); letter-spacing: 0.05em;">🔍 Filters:</span>
 <div style="display: flex; flex-direction: column; gap: 3px;">
 <label style="font-size: 0.60rem; font-weight: 700; text-transform: uppercase; color: var(--muted);">Check-In Status</label>
-<select id="filter-reg-status" style="background: rgba(255,255,255,0.06); border: 1px solid var(--border); border-radius: 6px; padding: 4px 8px; font-family: var(--font); font-size: 0.76rem; color: var(--text); outline: none; min-width: 150px; cursor: pointer;">
+<select id="filter-reg-status" style="background: rgba(255,255,255,0.06); border: 1px solid var(--border); border-radius: 6px; padding: 4px 8px; font-family: var(--font); font-size: 0.76rem; color: var(--text); outline: none; min-width: 130px; cursor: pointer;">
 <option value="">All Registrations</option>
 <option value="scanned">Checked In Only</option>
 <option value="not-scanned">Not Checked In Only</option>
 </select>
+</div>
+<div style="display: flex; flex-direction: column; gap: 3px;">
+<label style="font-size: 0.60rem; font-weight: 700; text-transform: uppercase; color: var(--muted);">Subgroup</label>
+<select id="filter-reg-subgroup" style="background: rgba(255,255,255,0.06); border: 1px solid var(--border); border-radius: 6px; padding: 4px 8px; font-family: var(--font); font-size: 0.76rem; color: var(--text); outline: none; min-width: 130px; cursor: pointer;">
+<option value="">All Subgroups</option>
+</select>
+</div>
+<div style="display: flex; flex-direction: column; gap: 3px;">
+<label style="font-size: 0.60rem; font-weight: 700; text-transform: uppercase; color: var(--muted);">Email Status</label>
+<select id="filter-reg-email-status" style="background: rgba(255,255,255,0.06); border: 1px solid var(--border); border-radius: 6px; padding: 4px 8px; font-family: var(--font); font-size: 0.76rem; color: var(--text); outline: none; min-width: 110px; cursor: pointer;">
+<option value="">All Emails</option>
+<option value="sent">Sent</option>
+<option value="not sent">Not Sent</option>
+<option value="failed">Failed</option>
+</select>
+</div>
+<div style="display: flex; flex-direction: column; gap: 3px;">
+<label style="font-size: 0.60rem; font-weight: 700; text-transform: uppercase; color: var(--muted);">WhatsApp Status</label>
+<select id="filter-reg-wa-status" style="background: rgba(255,255,255,0.06); border: 1px solid var(--border); border-radius: 6px; padding: 4px 8px; font-family: var(--font); font-size: 0.76rem; color: var(--text); outline: none; min-width: 110px; cursor: pointer;">
+<option value="">All WhatsApp</option>
+<option value="sent">Sent</option>
+<option value="not sent">Not Sent</option>
+<option value="failed">Failed</option>
+</select>
+</div>
+<div style="display: flex; flex-direction: column; gap: 3px;">
+<label style="font-size: 0.60rem; font-weight: 700; text-transform: uppercase; color: var(--muted);">SMS Status</label>
+<select id="filter-reg-sms-status" style="background: rgba(255,255,255,0.06); border: 1px solid var(--border); border-radius: 6px; padding: 4px 8px; font-family: var(--font); font-size: 0.76rem; color: var(--text); outline: none; min-width: 110px; cursor: pointer;">
+<option value="">All SMS</option>
+<option value="sent">Sent</option>
+<option value="not sent">Not Sent</option>
+<option value="failed">Failed</option>
+</select>
+</div>
+<div style="display: flex; flex-direction: column; gap: 3px; margin-top: auto;">
+<button id="reset-reg-filters" class="ops-btn" style="width: auto; margin: 0; padding: 6px 12px; font-size: 0.72rem; border-color: var(--border); color: var(--muted); background: transparent; height: 32px; border-radius: 6px; cursor: pointer;">Reset Filters</button>
 </div>
 </div>
 <!-- Subgroup Section (Dynamic Pills) -->
@@ -2185,11 +2281,11 @@
 <button class="ops-tab-btn" id="btn-preview-mode-render" onclick="window.setCardPreviewMode('render')" style="flex: 1; text-align: center;">Final PIL Render</button>
 </div>
 <!-- HTML Preview Container -->
-<div id="id-card-preview-container" style="position: relative; width: 340px; height: 510px; border-radius: 20px; box-shadow: 0 15px 40px rgba(0,0,0,0.5); overflow: hidden; background: linear-gradient(135deg, #0b0f19 0%, #1a2333 100%); border: 1px solid rgba(255,255,255,0.08); box-sizing: border-box;">
+<div id="id-card-preview-container" style="position: relative; width: 340px; height: 540px; border-radius: 20px; box-shadow: 0 15px 40px rgba(0,0,0,0.5); overflow: hidden; background: linear-gradient(135deg, #0b0f19 0%, #1a2333 100%); border: 1px solid rgba(255,255,255,0.08); box-sizing: border-box;">
 <!-- Dynamic HTML Content rendered here -->
 </div>
 <!-- Rendered Image Preview (Hidden by default) -->
-<div id="id-card-render-container" style="display: none; width: 340px; height: 510px; border-radius: 20px; box-shadow: 0 15px 40px rgba(0,0,0,0.5); overflow: hidden; border: 1px solid rgba(255,255,255,0.08); background: #000;">
+<div id="id-card-render-container" style="display: none; width: 340px; height: 540px; border-radius: 20px; box-shadow: 0 15px 40px rgba(0,0,0,0.5); overflow: hidden; border: 1px solid rgba(255,255,255,0.08); background: #000;">
 <img alt="Rendered Preview" id="id-card-render-img" src="" style="width: 100%; height: 100%; object-fit: contain;"/>
 </div>
 <div style="font-size: 0.7rem; color: var(--muted); text-align: center; line-height: 1.4;">
@@ -2220,14 +2316,26 @@
 <!-- Section 1: Template Preset / File Import -->
 <div style="margin-bottom: 16px;">
 <div style="font-weight: 700; font-size: 0.78rem; text-transform: uppercase; color: var(--accent2); margin-bottom: 8px;">Template Preset &amp; Import</div>
-<div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
-<select class="form-input" id="designer-template-preset" onchange="window.selectPresetTemplate(this.value)" style="flex: 1; min-width: 200px; height: 36px; padding: 6px 10px;">
+<div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+<select class="form-input" id="designer-template-preset" onchange="window.selectPresetTemplate(this.value)" style="flex: 1; min-width: 150px; height: 36px; padding: 6px 10px;">
 <!-- Loaded dynamically with 20 templates -->
 </select>
-<label class="download-btn csv-dl" style="margin: 0; cursor: pointer; border-color: var(--accent); color: var(--accent); display: flex; align-items: center; gap: 6px; padding: 7px 14px; font-size: 0.74rem;">
-              📥 Import HTML File
+<label class="download-btn csv-dl" style="margin: 0; cursor: pointer; border-color: var(--accent); color: var(--accent); display: flex; align-items: center; gap: 4px; padding: 7px 10px; font-size: 0.72rem;">
+              📥 Import HTML
               <input accept=".html,.txt" id="designer-file-import" onchange="window.importHtmlTemplate(this)" style="display: none;" type="file"/>
 </label>
+<button type="button" class="download-btn" id="btn-show-import-help" style="margin: 0; cursor: pointer; border-color: var(--muted); color: var(--muted); display: flex; align-items: center; gap: 4px; padding: 7px 10px; font-size: 0.72rem; background: transparent;">
+              ❓ Format Guide
+</button>
+<button type="button" class="download-btn" id="btn-save-preset-template" style="margin: 0; cursor: pointer; border-color: var(--accent2); color: var(--accent2); display: flex; align-items: center; gap: 4px; padding: 7px 10px; font-size: 0.72rem; background: transparent;">
+              💾 Save Preset
+</button>
+<button type="button" class="download-btn" id="btn-designer-undo" onclick="window.designerHistory.undo()" style="margin: 0; cursor: pointer; border-color: var(--muted); color: var(--muted); display: flex; align-items: center; gap: 4px; padding: 7px 10px; font-size: 0.72rem; background: transparent; opacity: 0.4; cursor: not-allowed;" disabled>
+              ↩️ Undo
+</button>
+<button type="button" class="download-btn" id="btn-designer-redo" onclick="window.designerHistory.redo()" style="margin: 0; cursor: pointer; border-color: var(--muted); color: var(--muted); display: flex; align-items: center; gap: 4px; padding: 7px 10px; font-size: 0.72rem; background: transparent; opacity: 0.4; cursor: not-allowed;" disabled>
+              ↪️ Redo
+</button>
 </div>
 </div>
 <!-- Section 2: Colors & Card Properties -->
@@ -2256,7 +2364,10 @@
 <div style="margin-bottom: 16px; border-top: 1px solid var(--border); padding-top: 12px;">
 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
 <span style="font-weight: 700; font-size: 0.78rem; text-transform: uppercase; color: var(--accent2);">Field Editor</span>
-<button onclick="window.addDesignerField()" style="background: rgba(0,245,160,0.08); color: var(--accent); border: 1px solid rgba(0,245,160,0.25); border-radius: 6px; padding: 4px 10px; font-size: 0.68rem; font-weight: 700; cursor: pointer;" type="button">+ Add Custom Field</button>
+<div style="display: flex; gap: 6px;">
+<button onclick="window.addDesignerField('text')" style="background: rgba(0,245,160,0.08); color: var(--accent); border: 1px solid rgba(0,245,160,0.25); border-radius: 6px; padding: 4px 10px; font-size: 0.68rem; font-weight: 700; cursor: pointer;" type="button">📝 + Text Field</button>
+<button onclick="window.addDesignerField('image')" style="background: rgba(139,92,246,0.08); color: #8b5cf6; border: 1px solid rgba(139,92,246,0.25); border-radius: 6px; padding: 4px 10px; font-size: 0.68rem; font-weight: 700; cursor: pointer;" type="button">🖼️ + Image Field</button>
+</div>
 </div>
 <!-- Selected Field dropdown -->
 <div class="form-group" style="margin-bottom: 12px;">
@@ -2266,61 +2377,155 @@
 </select>
 </div>
 <!-- Field Settings Panel -->
+<!-- Field Settings Panel -->
 <div id="designer-field-settings" style="padding: 12px; background: rgba(255,255,255,0.02); border: 1px solid var(--border); border-radius: 8px; display: none;">
-<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 8px;">
-<div class="form-group">
-<label class="form-label" style="font-size: 0.62rem;">Field Text/Label</label>
-<input class="form-input" id="designer-field-text" oninput="window.updateSelectedFieldFromControls()" style="height: 32px; font-size: 0.75rem;" type="text"/>
-</div>
-<div class="form-group">
-<label class="form-label" style="font-size: 0.62rem;">Bind Value to Column</label>
-<select class="form-input" id="designer-field-bind" onchange="window.updateSelectedFieldFromControls()" style="height: 32px; padding: 4px 8px; font-size: 0.75rem;">
-<!-- Dynamically populated with columns -->
-</select>
-</div>
-</div>
-<!-- Position Sliders -->
-<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 8px;">
-<div>
-<div style="display: flex; justify-content: space-between; font-size: 0.62rem; color: var(--muted); font-weight: 700; text-transform: uppercase;">
-<span>Horizontal (X)</span>
-<span id="designer-val-x">300</span>
-</div>
-<input class="form-range" id="designer-slider-x" max="600" min="0" oninput="window.updateSelectedFieldFromControls()" step="5" style="width: 100%; margin-top: 4px;" type="range"/>
-</div>
-<div>
-<div style="display: flex; justify-content: space-between; font-size: 0.62rem; color: var(--muted); font-weight: 700; text-transform: uppercase;">
-<span>Vertical (Y)</span>
-<span id="designer-val-y">210</span>
-</div>
-<input class="form-range" id="designer-slider-y" max="900" min="0" oninput="window.updateSelectedFieldFromControls()" step="5" style="width: 100%; margin-top: 4px;" type="range"/>
-</div>
-</div>
-<!-- Styling Controls -->
-<div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; align-items: center;">
-<div class="form-group" style="margin: 0;">
-<label class="form-label" style="font-size: 0.62rem;">Font Size</label>
-<div style="display: flex; gap: 8px; align-items: center;">
-<input id="designer-slider-size" max="72" min="8" oninput="window.updateSelectedFieldFromControls()" step="1" style="flex: 1;" type="range"/>
-<span id="designer-val-size" style="font-family: var(--mono); font-size: 0.72rem; min-width: 20px;">16</span>
-</div>
-</div>
-<div class="form-group" style="margin: 0;">
-<label class="form-label" style="font-size: 0.62rem;">Font Alignment</label>
-<select class="form-input" id="designer-field-align" onchange="window.updateSelectedFieldFromControls()" style="height: 32px; padding: 4px 8px; font-size: 0.75rem;">
-<option value="center">Center</option>
-<option value="left">Left</option>
-<option value="right">Right</option>
-</select>
-</div>
-<div class="form-group" style="margin: 0;">
-<label class="form-label" style="font-size: 0.62rem;">Text Color</label>
-<input class="form-input" id="designer-field-color" onchange="window.updateSelectedFieldFromControls()" style="height: 32px; padding: 2px;" type="color"/>
-</div>
-</div>
-<!-- Action buttons -->
-<div style="display: flex; justify-content: flex-end; margin-top: 10px; border-top: 1px dashed var(--border); padding-top: 8px;">
-<button id="btn-delete-designer-field" onclick="window.deleteSelectedDesignerField()" style="background: rgba(239,68,68,0.08); color: #ef4444; border: 1px solid rgba(239,68,68,0.25); border-radius: 6px; padding: 4px 10px; font-size: 0.68rem; font-weight: 700; cursor: pointer;" type="button">🗑️ Delete Field</button>
+  <!-- Shared Position Controls (X and Y) -->
+  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 12px;">
+    <div>
+      <div style="display: flex; justify-content: space-between; font-size: 0.62rem; color: var(--muted); font-weight: 700; text-transform: uppercase;">
+        <span>Horizontal (X)</span>
+        <span id="designer-val-x">300</span>
+      </div>
+      <input class="form-range" id="designer-slider-x" max="600" min="0" oninput="window.updateSelectedFieldFromControls()" step="5" style="width: 100%; margin-top: 4px;" type="range"/>
+    </div>
+    <div>
+      <div style="display: flex; justify-content: space-between; font-size: 0.62rem; color: var(--muted); font-weight: 700; text-transform: uppercase;">
+        <span>Vertical (Y)</span>
+        <span id="designer-val-y">210</span>
+      </div>
+      <input class="form-range" id="designer-slider-y" max="900" min="0" oninput="window.updateSelectedFieldFromControls()" step="5" style="width: 100%; margin-top: 4px;" type="range"/>
+    </div>
+  </div>
+
+  <!-- Text-specific Settings Container -->
+  <div id="designer-text-settings-container" style="display: block;">
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 8px;">
+      <div class="form-group">
+        <label class="form-label" style="font-size: 0.62rem;">Field Text/Label</label>
+        <input class="form-input" id="designer-field-text" oninput="window.updateSelectedFieldFromControls()" style="height: 32px; font-size: 0.75rem;" type="text"/>
+      </div>
+      <div class="form-group">
+        <label class="form-label" style="font-size: 0.62rem;">Bind Value to Column</label>
+        <select class="form-input" id="designer-field-bind" onchange="window.updateSelectedFieldFromControls()" style="height: 32px; padding: 4px 8px; font-size: 0.75rem;">
+          <!-- Dynamically populated with columns -->
+        </select>
+      </div>
+    </div>
+    
+    <!-- Text styling row 1: Font Family, Size, Color -->
+    <div style="display: grid; grid-template-columns: 1fr 0.8fr 0.6fr; gap: 12px; margin-bottom: 8px; align-items: center;">
+      <div class="form-group" style="margin: 0;">
+        <label class="form-label" style="font-size: 0.62rem;">Font Family</label>
+        <select class="form-input" id="designer-field-font" onchange="window.updateSelectedFieldFromControls()" style="height: 32px; padding: 4px 8px; font-size: 0.75rem;">
+          <option value="Arial">Arial (Sans)</option>
+          <option value="Outfit">Outfit (Sleek)</option>
+          <option value="Inter">Inter (Clean)</option>
+          <option value="Montserrat">Montserrat (Premium)</option>
+          <option value="Roboto Mono">Roboto Mono (Tech)</option>
+          <option value="Georgia">Georgia (Serif)</option>
+          <option value="Playfair Display">Playfair Display (Classic)</option>
+        </select>
+      </div>
+      <div class="form-group" style="margin: 0;">
+        <label class="form-label" style="font-size: 0.62rem;">Font Size</label>
+        <div style="display: flex; gap: 8px; align-items: center;">
+          <input id="designer-slider-size" max="72" min="8" oninput="window.updateSelectedFieldFromControls()" step="1" style="flex: 1;" type="range"/>
+          <span id="designer-val-size" style="font-family: var(--mono); font-size: 0.72rem; min-width: 20px;">16</span>
+        </div>
+      </div>
+      <div class="form-group" style="margin: 0;">
+        <label class="form-label" style="font-size: 0.62rem;">Text Color</label>
+        <input class="form-input" id="designer-field-color" onchange="window.updateSelectedFieldFromControls()" style="height: 32px; padding: 2px;" type="color"/>
+      </div>
+    </div>
+
+    <!-- Text styling row 2: Alignment, Styles (Bold, Italic, Underline), Transform, Tracking -->
+    <div style="display: grid; grid-template-columns: 0.8fr 1fr 1fr 1fr; gap: 10px; margin-bottom: 8px; align-items: center;">
+      <div class="form-group" style="margin: 0;">
+        <label class="form-label" style="font-size: 0.62rem;">Alignment</label>
+        <select class="form-input" id="designer-field-align" onchange="window.updateSelectedFieldFromControls()" style="height: 32px; padding: 4px 8px; font-size: 0.75rem;">
+          <option value="center">Center</option>
+          <option value="left">Left</option>
+          <option value="right">Right</option>
+        </select>
+      </div>
+      <div class="form-group" style="margin: 0;">
+        <label class="form-label" style="font-size: 0.62rem;">Text Style</label>
+        <div style="display: flex; gap: 3px; height: 32px;">
+          <button type="button" id="designer-field-bold" onclick="window.toggleDesignerFieldBold()" style="flex: 1; border: 1px solid var(--border); background: transparent; color: var(--foreground); border-radius: 4px; font-weight: bold; cursor: pointer; font-size: 0.74rem;">B</button>
+          <button type="button" id="designer-field-italic" onclick="window.toggleDesignerFieldItalic()" style="flex: 1; border: 1px solid var(--border); background: transparent; color: var(--foreground); border-radius: 4px; font-style: italic; cursor: pointer; font-size: 0.74rem;">I</button>
+          <button type="button" id="designer-field-underline" onclick="window.toggleDesignerFieldUnderline()" style="flex: 1; border: 1px solid var(--border); background: transparent; color: var(--foreground); border-radius: 4px; text-decoration: underline; cursor: pointer; font-size: 0.74rem;">U</button>
+        </div>
+      </div>
+      <div class="form-group" style="margin: 0;">
+        <label class="form-label" style="font-size: 0.62rem;">Transform</label>
+        <select class="form-input" id="designer-field-transform" onchange="window.updateSelectedFieldFromControls()" style="height: 32px; padding: 4px 8px; font-size: 0.72rem;">
+          <option value="none">Normal</option>
+          <option value="uppercase">UPPERCASE</option>
+          <option value="lowercase">lowercase</option>
+          <option value="capitalize">Capitalize</option>
+        </select>
+      </div>
+      <div class="form-group" style="margin: 0;">
+        <label class="form-label" style="font-size: 0.62rem;">Tracking</label>
+        <select class="form-input" id="designer-field-tracking" onchange="window.updateSelectedFieldFromControls()" style="height: 32px; padding: 4px 8px; font-size: 0.72rem;">
+          <option value="normal">Normal</option>
+          <option value="wide">Wide</option>
+          <option value="extra_wide">Extra Wide</option>
+        </select>
+      </div>
+    </div>
+  </div>
+
+  <!-- Image-specific Settings Container -->
+  <div id="designer-image-settings-container" style="display: none;">
+    <div class="form-group" style="margin-bottom: 8px;">
+      <label class="form-label" style="font-size: 0.62rem;">Bind Image to Column (e.g. Profile Photo)</label>
+      <select class="form-input" id="designer-field-img-bind" onchange="window.updateSelectedFieldFromControls()" style="height: 32px; padding: 4px 8px; font-size: 0.75rem;">
+        <!-- Filled dynamically with columns -->
+      </select>
+    </div>
+    
+    <div style="border: 1px dashed var(--border); border-radius: 6px; padding: 8px; background: rgba(139,92,246,0.02); margin-bottom: 8px;">
+      <div style="font-size: 0.65rem; font-weight: 700; color: var(--accent2); margin-bottom: 4px; text-transform: uppercase;">Or Choose Static Image / Logo</div>
+      <div class="form-group" style="margin-bottom: 6px;">
+        <label class="form-label" style="font-size: 0.60rem;">Static Image URL / Path</label>
+        <input class="form-input" id="designer-field-image-url" oninput="window.updateSelectedFieldFromControls()" placeholder="e.g. /static/uploads/assets/logo.png" style="height: 30px; font-size: 0.72rem;" type="text"/>
+      </div>
+      <div style="display: flex; gap: 8px; align-items: center; margin-bottom: 6px;">
+        <select class="form-input" id="designer-field-asset-select" onchange="window.selectDesignerAsset(this.value)" style="height: 30px; padding: 4px; font-size: 0.72rem; flex: 1;">
+          <option value="">-- Select Uploaded Asset --</option>
+        </select>
+        <input type="file" id="designer-field-asset-file" accept="image/*" style="display: none;" onchange="window.uploadDesignerAsset(this)"/>
+        <button type="button" class="download-btn" onclick="document.getElementById('designer-field-asset-file').click()" style="margin: 0; padding: 5px 8px; font-size: 0.68rem; border-color: var(--accent2); color: var(--accent2); white-space: nowrap;">
+          📤 Upload Asset
+        </button>
+      </div>
+    </div>
+
+    <!-- Width and Height sizing controls -->
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 8px;">
+      <div>
+        <div style="display: flex; justify-content: space-between; font-size: 0.62rem; color: var(--muted); font-weight: 700; text-transform: uppercase;">
+          <span>Image Width</span>
+          <span id="designer-val-img-w">100</span>
+        </div>
+        <input class="form-range" id="designer-slider-img-w" max="600" min="10" oninput="window.updateSelectedFieldFromControls()" step="5" style="width: 100%; margin-top: 4px;" type="range"/>
+      </div>
+      <div>
+        <div style="display: flex; justify-content: space-between; font-size: 0.62rem; color: var(--muted); font-weight: 700; text-transform: uppercase;">
+          <span>Image Height</span>
+          <span id="designer-val-img-h">100</span>
+        </div>
+        <input class="form-range" id="designer-slider-img-h" max="900" min="10" oninput="window.updateSelectedFieldFromControls()" step="5" style="width: 100%; margin-top: 4px;" type="range"/>
+      </div>
+    </div>
+  </div>
+
+  <!-- Delete Action button -->
+  <div style="display: flex; justify-content: flex-end; margin-top: 10px; border-top: 1px dashed var(--border); padding-top: 8px;">
+    <button id="btn-delete-designer-field" onclick="window.deleteSelectedDesignerField()" style="background: rgba(239,68,68,0.08); color: #ef4444; border: 1px solid rgba(239,68,68,0.25); border-radius: 6px; padding: 4px 10px; font-size: 0.68rem; font-weight: 700; cursor: pointer;" type="button">🗑️ Delete Field</button>
+  </div>
 </div>
 </div>
 </div>
@@ -2355,12 +2560,15 @@
 </div>
 </div>
 </div></div></div></div>
-</div>
 <script src="/static/js/socket.io.min.js"></script>
 <script src="/static/js/jquery.min.js"></script>
 <script src="/static/js/jquery.dataTables.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 <script type="module">
+  // Suppress Datatable alert boxes
+  if (window.jQuery && window.jQuery.fn && window.jQuery.fn.dataTable) {
+    window.jQuery.fn.dataTable.ext.errMode = 'throw';
+  }
   // ── Control Drawer toggle and overlay handlers ──
   const controlDrawer = document.getElementById('control-drawer');
   const drawerOverlay = document.getElementById('drawer-overlay');
@@ -2745,7 +2953,9 @@
 
   // ── Peak Arrivals Timeline Renderer ─────────────────────────────────────────
   window.renderArrivalsTimeline = function() {
-    fetch('/stats/timeline')
+    const select = document.getElementById('timeline-interval-select');
+    const interval = select ? select.value : '1h';
+    fetch(`/stats/timeline?interval=${interval}`)
       .then(r => r.json())
       .then(data => {
         const timeline = data.timeline || [];
@@ -2759,13 +2969,13 @@
         
         const maxVal = Math.max(...timeline.map(t => t.count));
         
-        let html = `<div style="display: flex; gap: 8px; align-items: flex-end; height: 120px; padding-top: 10px; border-bottom: 1px solid var(--border); margin-bottom: 8px;">`;
+        let html = `<div style="display: flex; gap: 8px; align-items: flex-end; height: 120px; padding-top: 10px; border-bottom: 1px solid var(--border); margin-bottom: 8px; overflow-x: auto; max-width: 100%;">`;
         
         timeline.forEach(item => {
           const pct = maxVal > 0 ? (item.count / maxVal) * 100 : 0;
-          const label = item.hour.split(' ')[1];
+          const label = item.label || item.hour || '';
           html += `
-            <div style="flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px; height: 100%;">
+            <div style="flex: 1; min-width: 32px; display: flex; flex-direction: column; align-items: center; gap: 4px; height: 100%;">
               <div style="flex: 1; width: 100%; display: flex; align-items: flex-end; justify-content: center; position: relative;" class="timeline-bar-wrapper">
                 <div class="timeline-bar" style="width: 70%; height: ${pct}%; background: linear-gradient(180deg, var(--accent) 0%, rgba(0, 245, 160, 0.2) 100%); border-radius: 4px 4px 0 0; transition: height 0.5s ease-out; cursor: pointer; position: relative;">
                   <div class="timeline-tooltip" style="position: absolute; bottom: 105%; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.85); color: #fff; padding: 4px 8px; font-size: 0.65rem; border-radius: 4px; border: 1px solid var(--accent); white-space: nowrap; pointer-events: none; opacity: 0; transition: opacity 0.2s; z-index: 10;">
@@ -2773,7 +2983,7 @@
                   </div>
                 </div>
               </div>
-              <span style="font-size: 0.65rem; color: var(--muted); font-family: var(--mono);">${label}</span>
+              <span style="font-size: 0.65rem; color: var(--muted); font-family: var(--mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%;" title="${escapeHtml(label)}">${escapeHtml(label)}</span>
             </div>
           `;
         });
@@ -2850,6 +3060,7 @@
         if (document.getElementById('cfg-id-card-label-phone')) document.getElementById('cfg-id-card-label-phone').value = cfg.id_card_label_phone || 'PHONE:';
         if (document.getElementById('cfg-id-card-label-uid')) document.getElementById('cfg-id-card-label-uid').value = cfg.id_card_label_uid || 'UNIQUE ID:';
         if (document.getElementById('cfg-id-card-label-pass')) document.getElementById('cfg-id-card-label-pass').value = cfg.id_card_label_pass || 'PASS TYPE:';
+        if (document.getElementById('cfg-id-card-photo-option')) document.getElementById('cfg-id-card-photo-option').value = cfg.id_card_photo_option || 'image_needed';
 
         // Cache globally
         window.eventConfig = cfg;
@@ -3297,7 +3508,8 @@
       id_card_label_email: document.getElementById('cfg-id-card-label-email') ? document.getElementById('cfg-id-card-label-email').value.trim() : 'EMAIL:',
       id_card_label_phone: document.getElementById('cfg-id-card-label-phone') ? document.getElementById('cfg-id-card-label-phone').value.trim() : 'PHONE:',
       id_card_label_uid: document.getElementById('cfg-id-card-label-uid') ? document.getElementById('cfg-id-card-label-uid').value.trim() : 'UNIQUE ID:',
-      id_card_label_pass: document.getElementById('cfg-id-card-label-pass') ? document.getElementById('cfg-id-card-label-pass').value.trim() : 'PASS TYPE:'
+      id_card_label_pass: document.getElementById('cfg-id-card-label-pass') ? document.getElementById('cfg-id-card-label-pass').value.trim() : 'PASS TYPE:',
+      id_card_photo_option: document.getElementById('cfg-id-card-photo-option') ? document.getElementById('cfg-id-card-photo-option').value : 'image_needed'
     };
 
     fetch('/save_config', {
@@ -4537,6 +4749,14 @@
           const parts = (d || '').split(';').filter(Boolean);
           return parts.length > 1 ? `${parts.length} scans` : (parts[0] || '—');
         }
+      },
+      {
+        data: null,
+        visible: false,
+        searchable: true,
+        render: (row) => {
+          return `${row.subgroup || ''} ${row.phone || ''} ${row.email || ''}`;
+        }
       }
     ],
     order: [[2, 'desc']],
@@ -4549,12 +4769,30 @@
     }
   });
 
+  // Live Scan Log Row Clicking to show Scan History Modal
+  $('#csv-table tbody').on('click', 'tr', function () {
+    const data = csvTable.row(this).data();
+    if (!data) return;
+    window.showScanHistoryModal(
+      data.attendee_name,
+      data.reg_no,
+      data.email,
+      data.phone,
+      data.subgroup,
+      data.Timestamps,
+      data.Devices
+    );
+  });
+
   // ── DataTable: Attendee Registry ──────────────────────────────────────────
   const registryTable = $('#registry-table').DataTable({
     ajax: { 
       url: '/registry', 
       dataSrc: function(json) {
         window.allAttendeesCache = json;
+        if (typeof window.populateSubgroupDropdowns === 'function') {
+          window.populateSubgroupDropdowns(json);
+        }
         if (typeof renderSubgroupCards === 'function') {
           renderSubgroupCards(json);
         }
@@ -4660,16 +4898,44 @@
           const isCheckedIn = statusLower && statusLower !== 'not scanned';
           const qrEscaped = btoa(unescape(encodeURIComponent(row.qr)));
           const viewQrBtn = `<button class="view-qr-btn trigger-qr-modal" data-reg="${escapeHtml(row.reg_no)}" data-name="${escapeHtml(row.name)}">View QR</button>`;
+          const revokeBtn = `<button class="revoke-checkin-btn" data-reg="${escapeHtml(row.reg_no)}" data-name="${escapeHtml(row.name)}" style="background: rgba(239, 68, 68, 0.1); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.2); padding: 4px 8px; font-size: 0.7rem; border-radius: 4px; cursor: pointer; transition: background 0.2s;">Revoke</button>`;
           
+          const hasEmail = row.email ? 'true' : 'false';
+          const hasPhone = row.phone ? 'true' : 'false';
+          const sendIdBtn = `<button onclick="window.sendSingleIdCard('${escapeHtml(row.reg_no)}', ${hasEmail}, ${hasPhone})" class="view-qr-btn" style="background: rgba(139, 92, 246, 0.08); color: #8b5cf6; border-color: rgba(139, 92, 246, 0.3); padding: 4px 8px; font-size: 0.7rem; border-radius: 4px; border: 1px solid; cursor: pointer; width: auto;">Send ID</button>`;
+          
+          let sentStatusHtml = '';
+          if (row.email_sent && row.email_sent.toLowerCase() === 'sent') {
+            sentStatusHtml += `<span class="badge-status scanned" style="font-size: 0.62rem; padding: 1px 4px; margin-left: 2px;">✉ Sent</span>`;
+          }
+          if (row.wa_sent && row.wa_sent.toLowerCase() === 'sent') {
+            sentStatusHtml += `<span class="badge-status scanned" style="font-size: 0.62rem; padding: 1px 4px; margin-left: 2px;">💬 Sent</span>`;
+          }
+
           if (isCheckedIn) {
-            const revokeBtn = `<button class="revoke-checkin-btn" data-reg="${escapeHtml(row.reg_no)}" data-name="${escapeHtml(row.name)}" style="background: rgba(239, 68, 68, 0.1); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.2); padding: 4px 8px; font-size: 0.7rem; border-radius: 4px; cursor: pointer; transition: background 0.2s; margin-right: 6px;">Revoke</button>`;
-            return `<div style="display: flex; gap: 6px; align-items: center; display: inline-flex;">
+            return `<div style="display: flex; gap: 6px; align-items: center; flex-wrap: wrap;">
               <span style="color: var(--accent); font-size: 0.75rem; font-weight:700; margin-right:2px;">✓ Checked In</span>
               ${viewQrBtn}
               ${revokeBtn}
+              ${sendIdBtn}
+              ${sentStatusHtml}
             </div>`;
           }
-          return `${viewQrBtn} <button class="manual-checkin-btn" data-qr-b64="${qrEscaped}">Check In</button>`;
+          return `<div style="display: flex; gap: 6px; align-items: center; flex-wrap: wrap;">
+            <button class="manual-checkin-btn" data-qr-b64="${qrEscaped}">Check In</button>
+            ${viewQrBtn}
+            ${sendIdBtn}
+            ${sentStatusHtml}
+          </div>`;
+        }
+      },
+      {
+        data: 'custom_fields',
+        visible: false,
+        searchable: true,
+        render: (d) => {
+          if (!d) return '';
+          return Object.values(d).join(' ');
         }
       }
     ],
@@ -4693,6 +4959,8 @@
         const deviceFilter = document.getElementById('filter-log-device').value;
         const typeFilter = document.getElementById('filter-log-type').value;
         const timeFilter = document.getElementById('filter-log-time').value;
+        const logSubgroupFilter = document.getElementById('filter-log-subgroup').value;
+        const logStatusFilter = document.getElementById('filter-log-status').value;
         
         const rowData = csvTable.row(dataIndex).data();
         if (!rowData) return true;
@@ -4721,6 +4989,26 @@
           
           if (diffMins > parseInt(timeFilter)) {
             return false;
+          }
+        }
+
+        // Subgroup Filter
+        if (logSubgroupFilter) {
+          const rowSubgroup = (rowData.subgroup || 'Unassigned').toLowerCase().trim();
+          if (rowSubgroup !== logSubgroupFilter.toLowerCase().trim()) {
+            return false;
+          }
+        }
+        
+        // Check-in status (outcome) filter
+        if (logStatusFilter) {
+          const rowStatus = (rowData.status || '').toLowerCase().trim();
+          if (logStatusFilter === 'scanned') {
+            if (rowStatus === 'not scanned' || rowStatus === 'quarantined') return false;
+          } else if (logStatusFilter === 'not-scanned') {
+            if (rowStatus !== 'not scanned' && rowStatus !== '') return false;
+          } else {
+            if (rowStatus !== logStatusFilter.toLowerCase().trim()) return false;
           }
         }
         
@@ -4760,6 +5048,33 @@
             }
           }
         }
+
+        // Email status filtering
+        const emailStatusFilter = document.getElementById('filter-reg-email-status').value;
+        if (emailStatusFilter) {
+          const emailSent = (rowData.email_sent || 'not sent').toLowerCase().trim();
+          if (emailStatusFilter === 'sent' && emailSent !== 'sent') return false;
+          if (emailStatusFilter === 'failed' && emailSent !== 'failed') return false;
+          if (emailStatusFilter === 'not sent' && emailSent !== 'not sent') return false;
+        }
+
+        // WhatsApp status filtering
+        const waStatusFilter = document.getElementById('filter-reg-wa-status').value;
+        if (waStatusFilter) {
+          const waSent = (rowData.wa_sent || 'not sent').toLowerCase().trim();
+          if (waStatusFilter === 'sent' && waSent !== 'sent') return false;
+          if (waStatusFilter === 'failed' && waSent !== 'failed') return false;
+          if (waStatusFilter === 'not sent' && waSent !== 'not sent') return false;
+        }
+
+        // SMS status filtering
+        const smsStatusFilter = document.getElementById('filter-reg-sms-status').value;
+        if (smsStatusFilter) {
+          const smsSent = (rowData.sms_sent || 'not sent').toLowerCase().trim();
+          if (smsStatusFilter === 'sent' && smsSent !== 'sent') return false;
+          if (smsStatusFilter === 'failed' && smsSent !== 'failed') return false;
+          if (smsStatusFilter === 'not sent' && smsSent !== 'not sent') return false;
+        }
         
         return true;
       }
@@ -4774,12 +5089,117 @@
   document.getElementById('filter-log-time').addEventListener('change', () => csvTable.draw());
   document.getElementById('filter-reg-status').addEventListener('change', () => registryTable.draw());
   
+  document.getElementById('filter-reg-email-status').addEventListener('change', () => registryTable.draw());
+  document.getElementById('filter-reg-wa-status').addEventListener('change', () => registryTable.draw());
+  document.getElementById('filter-reg-sms-status').addEventListener('change', () => registryTable.draw());
+  document.getElementById('filter-log-subgroup').addEventListener('change', () => csvTable.draw());
+  document.getElementById('filter-log-status').addEventListener('change', () => csvTable.draw());
+
+  // Populate subgroup dropdown options based on current attendee data
+  window.populateSubgroupDropdowns = function(data) {
+    const regSelect = document.getElementById('filter-reg-subgroup');
+    const logSelect = document.getElementById('filter-log-subgroup');
+    if (!regSelect && !logSelect) return;
+
+    const cfg = window.eventConfig || {};
+    const groupCol = (cfg.group_column || '').trim();
+    
+    const subgroups = new Set();
+    data.forEach(att => {
+      let val = '';
+      if (groupCol) {
+        if (att.custom_fields && groupCol in att.custom_fields) {
+          val = String(att.custom_fields[groupCol] || '').trim();
+        } else {
+          const matchedKey = Object.keys(att).find(k => k.toLowerCase() === groupCol.toLowerCase());
+          val = matchedKey ? String(att[matchedKey] || '').trim() : '';
+        }
+      }
+      const displayVal = val || 'Unassigned';
+      subgroups.add(displayVal);
+    });
+
+    const sortedSubgroups = Array.from(subgroups).sort();
+
+    if (regSelect) {
+      const currentVal = regSelect.value;
+      regSelect.innerHTML = '<option value="">All Subgroups</option>';
+      sortedSubgroups.forEach(g => {
+        const opt = document.createElement('option');
+        opt.value = g;
+        opt.textContent = g;
+        if (g === currentVal) opt.selected = true;
+        regSelect.appendChild(opt);
+      });
+    }
+
+    if (logSelect) {
+      const currentVal = logSelect.value;
+      logSelect.innerHTML = '<option value="">All Subgroups</option>';
+      sortedSubgroups.forEach(g => {
+        const opt = document.createElement('option');
+        opt.value = g;
+        opt.textContent = g;
+        if (g === currentVal) opt.selected = true;
+        logSelect.appendChild(opt);
+      });
+    }
+  };
+
+  const regSubgroupSelect = document.getElementById('filter-reg-subgroup');
+  if (regSubgroupSelect) {
+    regSubgroupSelect.addEventListener('change', function() {
+      const val = this.value;
+      window.activeSubgroupFilter = val || null;
+      
+      // Sync with subgroup pills
+      document.querySelectorAll('.subgroup-pill').forEach(p => {
+        p.classList.remove('active');
+        const nameSpan = p.querySelector('.group-pill-name');
+        const pillName = nameSpan ? nameSpan.textContent.trim() : 'All';
+        if (!val && pillName === 'All') {
+          p.classList.add('active');
+        } else if (val && pillName.toLowerCase() === val.toLowerCase()) {
+          p.classList.add('active');
+        }
+      });
+      
+      registryTable.draw();
+    });
+  }
+
   document.getElementById('reset-log-filters').addEventListener('click', () => {
     document.getElementById('filter-log-device').value = "";
     document.getElementById('filter-log-type').value = "";
     document.getElementById('filter-log-time').value = "";
+    document.getElementById('filter-log-subgroup').value = "";
+    document.getElementById('filter-log-status').value = "";
     csvTable.draw();
   });
+
+  const resetRegBtn = document.getElementById('reset-reg-filters');
+  if (resetRegBtn) {
+    resetRegBtn.addEventListener('click', () => {
+      document.getElementById('filter-reg-status').value = "";
+      document.getElementById('filter-reg-subgroup').value = "";
+      document.getElementById('filter-reg-email-status').value = "";
+      document.getElementById('filter-reg-wa-status').value = "";
+      document.getElementById('filter-reg-sms-status').value = "";
+      window.activeSubgroupFilter = null;
+      
+      // Reset pills active state
+      document.querySelectorAll('.subgroup-pill').forEach(p => {
+        p.classList.remove('active');
+        const nameSpan = p.querySelector('.group-pill-name');
+        const pillName = nameSpan ? nameSpan.textContent.trim() : 'All';
+        if (pillName === 'All') {
+          p.classList.add('active');
+        }
+      });
+      
+      registryTable.draw();
+    });
+  }
 
   // Handle Manual Check-in Click
   $('#registry-table').on('click', '.manual-checkin-btn', function() {
@@ -5629,7 +6049,8 @@
     allPill.innerHTML = `<span>All</span> <span style="background: rgba(255,255,255,0.15); padding: 1px 5px; border-radius: 10px; font-size: 0.62rem; font-weight: 700;">${totalCount}</span>`;
     allPill.onclick = () => {
       window.activeSubgroupFilter = null;
-      window.activeSubgroupFilter = null;
+      const regSelect = document.getElementById('filter-reg-subgroup');
+      if (regSelect) regSelect.value = "";
       document.querySelectorAll('.subgroup-pill').forEach(p => p.classList.remove('active'));
       allPill.classList.add('active');
       const dt = $('#registry-table').DataTable();
@@ -5672,6 +6093,8 @@
       // Filter table on click
       pill.onclick = () => {
         window.activeSubgroupFilter = groupName;
+        const regSelect = document.getElementById('filter-reg-subgroup');
+        if (regSelect) regSelect.value = groupName;
         document.querySelectorAll('.subgroup-pill').forEach(p => p.classList.remove('active'));
         pill.classList.add('active');
         const dt = $('#registry-table').DataTable();
@@ -6072,6 +6495,96 @@
     border_color: "rgba(255,255,255,0.08)",
     fields: []
   };
+  // Undo/Redo History Manager
+  window.designerHistory = {
+    undoStack: [],
+    redoStack: [],
+    
+    saveState: function() {
+      if (this.undoStack.length >= 50) {
+        this.undoStack.shift();
+      }
+      this.undoStack.push(JSON.stringify(window.designerConfig));
+      this.redoStack = []; // Clear redo stack on new action
+      this.updateButtons();
+    },
+    
+    undo: function() {
+      if (this.undoStack.length === 0) return;
+      const currentState = JSON.stringify(window.designerConfig);
+      this.redoStack.push(currentState);
+      
+      const prevStateStr = this.undoStack.pop();
+      window.designerConfig = JSON.parse(prevStateStr);
+      
+      this.syncUI();
+      this.updateButtons();
+      showDashboardToast('Undo', 'Reverted last action.', 'ok');
+    },
+    
+    redo: function() {
+      if (this.redoStack.length === 0) return;
+      const currentState = JSON.stringify(window.designerConfig);
+      this.undoStack.push(currentState);
+      
+      const nextStateStr = this.redoStack.pop();
+      window.designerConfig = JSON.parse(nextStateStr);
+      
+      this.syncUI();
+      this.updateButtons();
+      showDashboardToast('Redo', 'Reapplied action.', 'ok');
+    },
+    
+    updateButtons: function() {
+      const btnUndo = document.getElementById('btn-designer-undo');
+      const btnRedo = document.getElementById('btn-designer-redo');
+      if (btnUndo) {
+        btnUndo.disabled = (this.undoStack.length === 0);
+        btnUndo.style.opacity = (this.undoStack.length === 0) ? '0.4' : '1';
+        btnUndo.style.cursor = (this.undoStack.length === 0) ? 'not-allowed' : 'pointer';
+      }
+      if (btnRedo) {
+        btnRedo.disabled = (this.redoStack.length === 0);
+        btnRedo.style.opacity = (this.redoStack.length === 0) ? '0.4' : '1';
+        btnRedo.style.cursor = (this.redoStack.length === 0) ? 'not-allowed' : 'pointer';
+      }
+    },
+    
+    syncUI: function() {
+      applyDesignerConfigToPickers();
+      populateFieldsDropdown();
+      if (window.selectedFieldId !== null && window.designerConfig.fields && window.designerConfig.fields[window.selectedFieldId]) {
+        window.onDesignerFieldSelected(window.selectedFieldId);
+      } else {
+        window.selectedFieldId = null;
+        const select = document.getElementById('designer-selected-field');
+        if (select) select.value = "";
+        document.getElementById('designer-field-settings').style.display = 'none';
+      }
+      renderDesignerPreview();
+    }
+  };
+
+  // Keyboard shortcut listener for Ctrl+Z and Ctrl+Y
+  document.addEventListener('keydown', (e) => {
+    const designerTab = document.getElementById('main-tab-designer-content');
+    if (!designerTab || !designerTab.classList.contains('active')) return;
+    
+    if (e.ctrlKey || e.metaKey) {
+      if (e.key.toLowerCase() === 'z') {
+        e.preventDefault();
+        if (e.shiftKey) {
+          window.designerHistory.redo();
+        } else {
+          window.designerHistory.undo();
+        }
+      } else if (e.key.toLowerCase() === 'y') {
+        e.preventDefault();
+        window.designerHistory.redo();
+      }
+    }
+  });
+
   window.selectedFieldId = null;
 
   // Initialize and load templates presets
@@ -6151,15 +6664,73 @@
     });
 
     // Field settings inputs
-    const fieldInputs = ['designer-field-text', 'designer-field-bind', 'designer-slider-x', 'designer-slider-y', 'designer-slider-size', 'designer-field-align', 'designer-field-color'];
+    const fieldInputs = [
+      'designer-field-text', 'designer-field-bind', 'designer-slider-x', 'designer-slider-y',
+      'designer-slider-size', 'designer-field-align', 'designer-field-color',
+      'designer-field-font', 'designer-field-transform', 'designer-field-tracking',
+      'designer-field-img-bind', 'designer-field-image-url', 'designer-slider-img-w', 'designer-slider-img-h'
+    ];
     fieldInputs.forEach(id => {
       const el = document.getElementById(id);
       if (el) {
+        el.addEventListener('focus', () => {
+          if (window.designerHistory && typeof window.designerHistory.saveState === 'function') {
+            window.designerHistory.saveState();
+          }
+        });
         el.addEventListener('input', () => {
+          updateSelectedFieldFromControls();
+        });
+        el.addEventListener('change', () => {
           updateSelectedFieldFromControls();
         });
       }
     });
+
+    // Format guide button click listener
+    const btnHelp = document.getElementById('btn-show-import-help');
+    if (btnHelp) {
+      btnHelp.addEventListener('click', (e) => {
+        e.preventDefault();
+        window.showImportHelpModal();
+      });
+    }
+
+    // Save preset template button click listener
+    const btnSavePreset = document.getElementById('btn-save-preset-template');
+    if (btnSavePreset) {
+      btnSavePreset.addEventListener('click', (e) => {
+        e.preventDefault();
+        window.saveAsPresetTemplate();
+      });
+    }
+
+    // Format guide close button listener
+    const btnCloseHelp = document.querySelector('#id-import-help-modal .help-modal-close');
+    if (btnCloseHelp) {
+      btnCloseHelp.removeAttribute('onclick'); // remove inline handler
+      btnCloseHelp.addEventListener('click', (e) => {
+        e.preventDefault();
+        window.closeImportHelpModal();
+      });
+    }
+
+    // Scan history modal close button listener
+    const btnCloseScanHist = document.getElementById('btn-close-scan-history');
+    if (btnCloseScanHist) {
+      btnCloseScanHist.addEventListener('click', (e) => {
+        e.preventDefault();
+        window.closeScanHistoryModal();
+      });
+    }
+
+    // Photo option change listener
+    const photoOpt = document.getElementById('cfg-id-card-photo-option');
+    if (photoOpt) {
+      photoOpt.addEventListener('change', () => {
+        renderDesignerPreview();
+      });
+    }
   }
 
   function hexToRgb(hex) {
@@ -6177,6 +6748,14 @@
     window.designerConfig.accent_color = document.getElementById('designer-accent-color').value;
     window.designerConfig.border_color = document.getElementById('designer-border-color').value;
   }
+
+  window.updateDesignerCardProperties = function() {
+    if (window.designerHistory && typeof window.designerHistory.saveState === 'function') {
+      window.designerHistory.saveState();
+    }
+    updateDesignerConfigFromPickers();
+    renderDesignerPreview();
+  };
 
   // Populate fields list dropdown
   function populateFieldsDropdown() {
@@ -6206,26 +6785,110 @@
     const f = window.designerConfig.fields[window.selectedFieldId];
     if (f) {
       document.getElementById('designer-field-settings').style.display = 'block';
-      document.getElementById('designer-field-text').value = f.text || '';
-      document.getElementById('designer-field-bind').value = f.bind_column || '';
+      
+      // Populate positions
       document.getElementById('designer-slider-x').value = f.x || 300;
       document.getElementById('designer-slider-y').value = f.y || 210;
-      document.getElementById('designer-slider-size').value = f.font_size || 16;
-      document.getElementById('designer-field-align').value = f.align || 'center';
-      
-      const rgbToHex = (rgb) => {
-        if (!rgb || rgb.length < 3) return "#ffffff";
-        return "#" + rgb.map(x => {
-          const hex = x.toString(16);
-          return hex.length === 1 ? "0" + hex : hex;
-        }).join("");
-      };
-      document.getElementById('designer-field-color').value = rgbToHex(f.color);
-
-      // Display numeric values
       document.getElementById('designer-val-x').textContent = f.x || 300;
       document.getElementById('designer-val-y').textContent = f.y || 210;
-      document.getElementById('designer-val-size').textContent = f.font_size || 16;
+      
+      // Populate column options if empty
+      const textSelect = document.getElementById('designer-field-bind');
+      if (textSelect && textSelect.options.length <= 1) {
+        window.populateDesignerBindColumns();
+      }
+      
+      const isImg = (f.type === 'image');
+      if (isImg) {
+        document.getElementById('designer-text-settings-container').style.display = 'none';
+        document.getElementById('designer-image-settings-container').style.display = 'block';
+        
+        document.getElementById('designer-field-img-bind').value = f.bind_column || '';
+        document.getElementById('designer-field-image-url').value = f.image_url || '';
+        
+        document.getElementById('designer-slider-img-w').value = f.width || 100;
+        document.getElementById('designer-slider-img-h').value = f.height || 100;
+        document.getElementById('designer-val-img-w').textContent = f.width || 100;
+        document.getElementById('designer-val-img-h').textContent = f.height || 100;
+        
+        window.refreshDesignerAssetsList();
+      } else {
+        document.getElementById('designer-text-settings-container').style.display = 'block';
+        document.getElementById('designer-image-settings-container').style.display = 'none';
+        
+        document.getElementById('designer-field-text').value = f.text || '';
+        document.getElementById('designer-field-bind').value = f.bind_column || '';
+        document.getElementById('designer-slider-size').value = f.font_size || 16;
+        document.getElementById('designer-val-size').textContent = f.font_size || 16;
+        document.getElementById('designer-field-align').value = f.align || 'center';
+        
+        const rgbToHex = (rgb) => {
+          if (!rgb || rgb.length < 3) return "#ffffff";
+          return "#" + rgb.map(x => {
+            const hex = x.toString(16);
+            return hex.length === 1 ? "0" + hex : hex;
+          }).join("");
+        };
+        document.getElementById('designer-field-color').value = rgbToHex(f.color);
+        
+        document.getElementById('designer-field-font').value = f.font_name || 'Arial';
+        document.getElementById('designer-field-transform').value = f.transform || 'none';
+        document.getElementById('designer-field-tracking').value = f.tracking || 'normal';
+        
+        const btnBold = document.getElementById('designer-field-bold');
+        const btnItalic = document.getElementById('designer-field-italic');
+        const btnUnderline = document.getElementById('designer-field-underline');
+        
+        const highlightBtn = (btn, active) => {
+          if (btn) {
+            if (active) {
+              btn.style.borderColor = 'var(--accent)';
+              btn.style.background = 'rgba(0, 245, 160, 0.15)';
+              btn.style.color = 'var(--accent)';
+            } else {
+              btn.style.borderColor = 'var(--border)';
+              btn.style.background = 'transparent';
+              btn.style.color = '';
+            }
+          }
+        };
+        highlightBtn(btnBold, f.bold);
+        highlightBtn(btnItalic, f.italic);
+        highlightBtn(btnUnderline, f.underline);
+      }
+    }
+  };
+
+  window.toggleDesignerFieldBold = function() {
+    if (window.selectedFieldId === null) return;
+    const f = window.designerConfig.fields[window.selectedFieldId];
+    if (f) {
+      window.designerHistory.saveState();
+      f.bold = !f.bold;
+      window.onDesignerFieldSelected(window.selectedFieldId);
+      renderDesignerPreview();
+    }
+  };
+
+  window.toggleDesignerFieldItalic = function() {
+    if (window.selectedFieldId === null) return;
+    const f = window.designerConfig.fields[window.selectedFieldId];
+    if (f) {
+      window.designerHistory.saveState();
+      f.italic = !f.italic;
+      window.onDesignerFieldSelected(window.selectedFieldId);
+      renderDesignerPreview();
+    }
+  };
+
+  window.toggleDesignerFieldUnderline = function() {
+    if (window.selectedFieldId === null) return;
+    const f = window.designerConfig.fields[window.selectedFieldId];
+    if (f) {
+      window.designerHistory.saveState();
+      f.underline = !f.underline;
+      window.onDesignerFieldSelected(window.selectedFieldId);
+      renderDesignerPreview();
     }
   };
 
@@ -6233,40 +6896,111 @@
     if (window.selectedFieldId === null) return;
     const f = window.designerConfig.fields[window.selectedFieldId];
     if (f) {
-      f.text = document.getElementById('designer-field-text').value;
-      f.bind_column = document.getElementById('designer-field-bind').value;
       f.x = parseInt(document.getElementById('designer-slider-x').value);
       f.y = parseInt(document.getElementById('designer-slider-y').value);
-      f.font_size = parseInt(document.getElementById('designer-slider-size').value);
-      f.align = document.getElementById('designer-field-align').value;
-      f.color = hexToRgb(document.getElementById('designer-field-color').value);
-
       document.getElementById('designer-val-x').textContent = f.x;
       document.getElementById('designer-val-y').textContent = f.y;
-      document.getElementById('designer-val-size').textContent = f.font_size;
-
+      
+      const isImg = (f.type === 'image');
+      if (isImg) {
+        f.bind_column = document.getElementById('designer-field-img-bind').value;
+        f.image_url = document.getElementById('designer-field-image-url').value.trim();
+        f.width = parseInt(document.getElementById('designer-slider-img-w').value);
+        f.height = parseInt(document.getElementById('designer-slider-img-h').value);
+        
+        document.getElementById('designer-val-img-w').textContent = f.width;
+        document.getElementById('designer-val-img-h').textContent = f.height;
+      } else {
+        f.text = document.getElementById('designer-field-text').value;
+        f.bind_column = document.getElementById('designer-field-bind').value;
+        f.font_size = parseInt(document.getElementById('designer-slider-size').value);
+        f.align = document.getElementById('designer-field-align').value;
+        f.color = hexToRgb(document.getElementById('designer-field-color').value);
+        
+        f.font_name = document.getElementById('designer-field-font').value;
+        f.transform = document.getElementById('designer-field-transform').value;
+        f.tracking = document.getElementById('designer-field-tracking').value;
+        
+        document.getElementById('designer-val-size').textContent = f.font_size;
+      }
+      
       // Update dropdown option label
       const select = document.getElementById('designer-selected-field');
       if (select && select.options[window.selectedFieldId + 1]) {
         select.options[window.selectedFieldId + 1].textContent = f.text || `Field ${window.selectedFieldId + 1}`;
       }
-
+      
       renderDesignerPreview();
     }
   };
 
-  window.addDesignerField = function() {
-    const name = prompt("Enter field label/name:", "Custom Text");
-    if (name === null) return;
-    const newField = {
-      text: name,
-      bind_column: "",
-      x: 170,
-      y: 250,
-      font_size: 16,
-      color: [255, 255, 255],
-      align: "center"
-    };
+  window.populateDesignerBindColumns = function() {
+    const textSelect = document.getElementById('designer-field-bind');
+    const imgSelect = document.getElementById('designer-field-img-bind');
+    if (!textSelect || !imgSelect) return;
+    
+    textSelect.innerHTML = '<option value="">-- No Binding (Static Text) --</option>';
+    imgSelect.innerHTML = '<option value="">-- No Binding (Static Image) --</option>';
+    
+    let headers = ['Name', 'Email Address', 'Registration Number', 'Phone Number', 'Unique ID', 'Pass Type'];
+    if (window.allAttendeesCache && window.allAttendeesCache.length > 0) {
+      const record = window.allAttendeesCache[0];
+      headers = Object.keys(record).filter(k => !['reg_index', 'status', 'email_sent', 'wa_sent', 'sms_sent', 'scan_timestamps', 'scan_devices', 'qr', 'barcode', 'qr_image', 'barcode_image'].includes(k));
+    }
+    
+    headers.forEach(h => {
+      const label = h.charAt(0).toUpperCase() + h.slice(1).replace(/_/g, ' ');
+      
+      const optText = document.createElement('option');
+      optText.value = h;
+      optText.textContent = label;
+      textSelect.appendChild(optText);
+      
+      const optImg = document.createElement('option');
+      optImg.value = h;
+      optImg.textContent = label;
+      imgSelect.appendChild(optImg);
+    });
+  };
+
+  window.addDesignerField = function(fieldType = "text") {
+    let newField = {};
+    if (fieldType === "image") {
+      const name = prompt("Enter image field label/name:", "Custom Image");
+      if (name === null) return;
+      window.designerHistory.saveState();
+      newField = {
+        type: "image",
+        text: name,
+        bind_column: "",
+        image_url: "/static/uploads/logo.png",
+        x: 250,
+        y: 250,
+        width: 100,
+        height: 100
+      };
+    } else {
+      const name = prompt("Enter text field label/name:", "Custom Text");
+      if (name === null) return;
+      window.designerHistory.saveState();
+      newField = {
+        type: "text",
+        text: name,
+        bind_column: "",
+        x: 170,
+        y: 250,
+        font_size: 16,
+        color: [255, 255, 255],
+        align: "center",
+        bold: false,
+        italic: false,
+        underline: false,
+        font_name: "Arial",
+        transform: "none",
+        tracking: "normal"
+      };
+    }
+    
     if (!window.designerConfig.fields) {
       window.designerConfig.fields = [];
     }
@@ -6279,6 +7013,7 @@
 
   window.deleteSelectedDesignerField = function() {
     if (window.selectedFieldId === null) return;
+    window.designerHistory.saveState();
     window.designerConfig.fields.splice(window.selectedFieldId, 1);
     window.selectedFieldId = null;
     populateFieldsDropdown();
@@ -6286,16 +7021,333 @@
     renderDesignerPreview();
   };
 
+  window.uploadDesignerAsset = function(input) {
+    if (!input.files || input.files.length === 0) return;
+    const file = input.files[0];
+    const formData = new FormData();
+    formData.append('file', file);
+    
+    showDashboardToast('Uploading Asset', 'Uploading asset file...', 'ok');
+    
+    fetch('/upload_designer_asset', {
+      method: 'POST',
+      body: formData
+    })
+    .then(r => r.json())
+    .then(data => {
+      if (data.success) {
+        showDashboardToast('Asset Uploaded', 'Custom image asset uploaded successfully.', 'ok');
+        document.getElementById('designer-field-image-url').value = data.url;
+        window.refreshDesignerAssetsList(data.url);
+        window.updateSelectedFieldFromControls();
+      } else {
+        showDashboardToast('Upload Failed', data.message || 'Error occurred.', 'err');
+      }
+    })
+    .catch(err => {
+      console.error(err);
+      showDashboardToast('Error', 'Failed to upload asset file.', 'err');
+    });
+  };
+
+  window.refreshDesignerAssetsList = function(selectUrl) {
+    fetch('/list_designer_assets')
+    .then(r => r.json())
+    .then(data => {
+      if (data.success) {
+        const select = document.getElementById('designer-field-asset-select');
+        if (select) {
+          select.innerHTML = '<option value="">-- Select Uploaded Asset --</option>';
+          data.assets.forEach(asset => {
+            const opt = document.createElement('option');
+            opt.value = asset.url;
+            opt.textContent = asset.filename;
+            select.appendChild(opt);
+          });
+          
+          if (selectUrl) {
+            select.value = selectUrl;
+          } else {
+            const curUrl = document.getElementById('designer-field-image-url').value;
+            select.value = curUrl || '';
+          }
+        }
+      }
+    })
+    .catch(err => console.error("Error listing designer assets:", err));
+  };
+  
+  window.selectDesignerAsset = function(val) {
+    if (val) {
+      document.getElementById('designer-field-image-url').value = val;
+      window.updateSelectedFieldFromControls();
+    }
+  };
+
   // Select Preset Template logic
   window.selectPresetTemplate = function(filename) {
     if (!filename) return;
+    window.designerHistory.saveState();
     const t = window.cardTemplatesCache.find(x => x.filename === filename);
     if (t) {
       window.designerConfig.mode = "custom_html";
       window.designerConfig.html = t.html;
       window.designerConfig.css = t.css;
+      window.designerConfig.body_class = t.body_class || "";
+      window.designerConfig.tailwind_config = t.tailwind_config || "";
       renderDesignerPreview();
     }
+  };
+
+  // Import Custom HTML Template
+  window.importHtmlTemplate = function(input) {
+    if (!input.files || !input.files[0]) return;
+    window.designerHistory.saveState();
+    const file = input.files[0];
+    const reader = new FileReader();
+    reader.onload = function(e) {
+      const text = e.target.result;
+      
+      // Parse the HTML text
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(text, 'text/html');
+      
+      // Extract CSS
+      let css = "";
+      const styleTags = doc.querySelectorAll('style');
+      styleTags.forEach(style => {
+        css += style.innerHTML + "\n";
+      });
+      
+      // Extract Tailwind Config
+      let tailwindConfig = "";
+      const scriptTags = doc.querySelectorAll('script');
+      scriptTags.forEach(script => {
+        const content = script.innerHTML;
+        if (content.includes('tailwind.config')) {
+          const startIdx = content.indexOf('tailwind.config');
+          const afterConfig = content.substring(startIdx);
+          const braceStart = afterConfig.indexOf('{');
+          if (braceStart !== -1) {
+            const braceEnd = afterConfig.lastIndexOf('}');
+            if (braceEnd !== -1) {
+              tailwindConfig = afterConfig.substring(braceStart, braceEnd + 1);
+            }
+          }
+        }
+      });
+      
+      // Extract Body Class
+      const bodyClass = doc.body ? doc.body.className : "";
+      
+      // Extract HTML Content (the card container)
+      let html = "";
+      if (doc.body) {
+        const mainCard = doc.body.firstElementChild;
+        if (mainCard) {
+          html = mainCard.outerHTML;
+        } else {
+          html = doc.body.innerHTML;
+        }
+      } else {
+        html = text;
+      }
+      
+      // Update designerConfig
+      window.designerConfig.mode = "custom_html";
+      window.designerConfig.html = html;
+      window.designerConfig.css = css;
+      window.designerConfig.body_class = bodyClass;
+      window.designerConfig.tailwind_config = tailwindConfig;
+      
+      showDashboardToast('Imported', `Successfully imported template: ${file.name}`, 'ok');
+      
+      // Reset file input
+      input.value = "";
+      
+      renderDesignerPreview();
+    };
+    reader.readAsText(file);
+  };
+
+  // Save template as a new/existing Preset
+  window.saveAsPresetTemplate = function() {
+    if (window.designerConfig.mode !== "custom_html") {
+      showDashboardToast('Error', 'Only HTML-based designs can be saved as preset templates.', 'err');
+      return;
+    }
+    const name = prompt("Enter a name for this preset template:", window.designerConfig.name || "My Custom Template");
+    if (!name || !name.trim()) return;
+
+    fetch('/save_template_preset', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: name.trim(),
+        html: window.designerConfig.html || "",
+        css: window.designerConfig.css || "",
+        body_class: window.designerConfig.body_class || "",
+        tailwind_config: window.designerConfig.tailwind_config || ""
+      })
+    })
+    .then(res => res.json())
+    .then(data => {
+      if (data.message && data.message.includes('saved successfully')) {
+        showDashboardToast('Preset Saved', data.message, 'ok');
+        // Reload preset dropdown
+        fetch('/list_id_templates')
+          .then(r => r.json())
+          .then(templates => {
+            window.cardTemplatesCache = templates;
+            const presetSelect = document.getElementById('designer-template-preset');
+            if (presetSelect) {
+              presetSelect.innerHTML = '<option value="">Select a template preset...</option>';
+              templates.forEach(t => {
+                const opt = document.createElement('option');
+                opt.value = t.filename;
+                opt.textContent = t.name;
+                presetSelect.appendChild(opt);
+              });
+              if (data.filename) {
+                presetSelect.value = data.filename;
+              }
+            }
+          });
+      } else {
+        showDashboardToast('Save Failed', data.message || 'Error saving template preset.', 'err');
+      }
+    })
+    .catch(err => {
+      showDashboardToast('Error', err.message || 'Failed to save preset template.', 'err');
+    });
+  };
+
+  // Import Format Guide Modal Helpers
+  window.showImportHelpModal = function() {
+    const modal = document.getElementById('id-import-help-modal');
+    if (modal) {
+      modal.classList.add('active');
+      // Bind click outside listener dynamically
+      if (!modal.dataset.listenerBound) {
+        modal.addEventListener('click', (e) => {
+          if (e.target === modal) window.closeImportHelpModal();
+        });
+        modal.dataset.listenerBound = "true";
+      }
+    } else {
+      console.error("Format guide modal not found!");
+    }
+  };
+
+  window.closeImportHelpModal = function() {
+    const modal = document.getElementById('id-import-help-modal');
+    if (modal) modal.classList.remove('active');
+  };
+
+  // Scan History Modal & Single ID Send Helpers
+  window.showScanHistoryModal = function(name, regNo, email, phone, subgroup, timestampsStr, devicesStr) {
+    const modal = document.getElementById('id-scan-history-modal');
+    if (!modal) return;
+    
+    document.getElementById('scan-hist-name').textContent = name || '—';
+    document.getElementById('scan-hist-reg').textContent = regNo || '—';
+    document.getElementById('scan-hist-email').textContent = email || '—';
+    document.getElementById('scan-hist-phone').textContent = phone || '—';
+    document.getElementById('scan-hist-subgroup').textContent = subgroup || 'Unassigned';
+    
+    const tsParts = (timestampsStr || '').split(';').filter(Boolean);
+    const devParts = (devicesStr || '').split(';').filter(Boolean);
+    
+    document.getElementById('scan-hist-total').textContent = tsParts.length;
+    
+    const tbody = document.getElementById('scan-hist-timeline-body');
+    tbody.innerHTML = '';
+    
+    if (tsParts.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="3" style="padding: 12px; text-align: center; color: var(--muted);">No scans recorded.</td></tr>`;
+    } else {
+      for (let i = 0; i < tsParts.length; i++) {
+        const tr = document.createElement('tr');
+        tr.style.borderBottom = '1px solid var(--border)';
+        
+        const tdIdx = document.createElement('td');
+        tdIdx.style.padding = '8px 12px';
+        tdIdx.textContent = i + 1;
+        
+        const tdTs = document.createElement('td');
+        tdTs.style.padding = '8px 12px';
+        tdTs.style.fontFamily = 'var(--mono)';
+        tdTs.textContent = tsParts[i].trim();
+        
+        const tdDev = document.createElement('td');
+        tdDev.style.padding = '8px 12px';
+        tdDev.style.color = 'var(--accent2)';
+        tdDev.style.fontWeight = '600';
+        tdDev.textContent = (devParts[i] || 'Unknown Device').trim();
+        
+        tr.appendChild(tdIdx);
+        tr.appendChild(tdTs);
+        tr.appendChild(tdDev);
+        tbody.appendChild(tr);
+      }
+    }
+    
+    modal.classList.add('active');
+    if (!modal.dataset.listenerBound) {
+      modal.addEventListener('click', (e) => {
+        if (e.target === modal) window.closeScanHistoryModal();
+      });
+      modal.dataset.listenerBound = "true";
+    }
+  };
+
+  window.closeScanHistoryModal = function() {
+    const modal = document.getElementById('id-scan-history-modal');
+    if (modal) modal.classList.remove('active');
+  };
+
+  window.sendSingleIdCard = function(regNo, hasEmail, hasPhone) {
+    if (!hasEmail && !hasPhone) {
+      showDashboardToast('Error', 'No email or phone number available for this attendee.', 'err');
+      return;
+    }
+    let defaultChannel = 'both';
+    if (hasEmail && !hasPhone) defaultChannel = 'email';
+    if (!hasEmail && hasPhone) defaultChannel = 'whatsapp';
+    
+    let msg = `Send ID card for registration #${regNo}?\n`;
+    if (hasEmail && hasPhone) {
+      msg += "Type 'email', 'whatsapp', or 'both':";
+    } else if (hasEmail) {
+      msg += "Type 'email':";
+    } else {
+      msg += "Type 'whatsapp':";
+    }
+    
+    const channelInput = prompt(msg, defaultChannel);
+    if (!channelInput) return;
+    const channel = channelInput.trim().toLowerCase();
+    if (!['email', 'whatsapp', 'both'].includes(channel)) {
+      showDashboardToast('Invalid', 'Please enter a valid channel.', 'err');
+      return;
+    }
+    
+    showDashboardToast('Sending', 'Sending ID Card...', 'ok');
+    fetch('/send_id_card_single', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ reg_no: regNo, channel: channel })
+    })
+    .then(r => r.json())
+    .then(data => {
+      if (data.success) {
+        showDashboardToast('Sent', data.message, 'ok');
+        if (typeof registryTable !== 'undefined') registryTable.ajax.reload(null, false);
+      } else {
+        showDashboardToast('Error', data.message, 'err');
+      }
+    })
+    .catch(err => showDashboardToast('Error', err.message, 'err'));
   };
 
   // Preview Mode: HTML Web Preview vs Final PIL Render
@@ -6365,10 +7417,21 @@
     
     let htmlContent = "";
     let cssContent = "";
+    let cleanCss = "";
     
     if (window.designerConfig.mode === "custom_html") {
       htmlContent = window.designerConfig.html || "";
       cssContent = window.designerConfig.css || "";
+      cleanCss = cssContent;
+      cleanCss = cleanCss.replace(/body\s*\{([^}]+)\}/gi, (match, bodyRules) => {
+        let cleaned = bodyRules
+          .replace(/(?:min-)?height\s*:[^;]+;?/gi, "")
+          .replace(/display\s*:[^;]+;?/gi, "")
+          .replace(/justify-content\s*:[^;]+;?/gi, "")
+          .replace(/align-items\s*:[^;]+;?/gi, "")
+          .replace(/margin\s*:[^;]+;?/gi, "");
+        return `body {${cleaned}}`;
+      });
     } else {
       // Build dummy template preview for custom gradient background
       const rgbToCss = (rgb) => rgb ? `rgb(${rgb.join(',')})` : 'rgb(0,0,0)';
@@ -6395,8 +7458,6 @@
     
     // Resolve dynamic variables for preview display
     htmlContent = htmlContent.replace(/{Event}/g, "SAMPLE EVENT");
-    htmlContent = htmlContent.replace(/{Surname}/g, "Doe");
-    htmlContent = htmlContent.replace(/{Given Names}/g, "John");
     htmlContent = htmlContent.replace(/{Name}/g, "John Doe");
     htmlContent = htmlContent.replace(/{Pass Type}/g, "VIP");
     htmlContent = htmlContent.replace(/{Registration Number}/g, "DEMO12345");
@@ -6404,8 +7465,21 @@
     htmlContent = htmlContent.replace(/{Email Address}/g, "johndoe@example.com");
     htmlContent = htmlContent.replace(/{Phone Number}/g, "+91 98765 43210");
     htmlContent = htmlContent.replace(/{QR_CODE_URL}/g, "/tunnel_qr?data=John%20Doe%20%7C%20DEMO12345");
-    htmlContent = htmlContent.replace(/{PHOTO_URL}/g, "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=200");
+    // Resolve profile photo display option
+    const photoOptionEl = document.getElementById('cfg-id-card-photo-option');
+    const photoOption = photoOptionEl ? photoOptionEl.value : 'image_needed';
+    let resolvedPhotoUrl = "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=200";
+    if (photoOption === 'hide_photo') {
+      resolvedPhotoUrl = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
+    } else if (photoOption === 'always_initials') {
+      resolvedPhotoUrl = getInitialsSvgUri("John Doe");
+    }
+    htmlContent = htmlContent.replace(/{PHOTO_URL}/g, resolvedPhotoUrl);
+    htmlContent = htmlContent.replace(/{LOGO_URL}/g, "/static/uploads/logo.png?t=" + Date.now());
     
+    const tailwindConfig = window.designerConfig.tailwind_config || "";
+    const tailwindScript = tailwindConfig ? `<script>tailwind.config = ${tailwindConfig};<\/script>` : "";
+
     const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
     iframeDoc.open();
     iframeDoc.write(`
@@ -6414,8 +7488,9 @@
       <head>
         <meta charset="utf-8">
         <script src="https://cdn.tailwindcss.com"><\/script>
+        ${tailwindScript}
         <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" />
-        <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700;800&family=Outfit:wght@300;400;600;700;800&family=Roboto+Mono:wght@400;700&display=swap" />
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700;800&family=Outfit:wght@300;400;600;700;800&family=Roboto+Mono:wght@400;700&family=Playfair+Display:ital,wght@0,400..900;1,400..900&family=Montserrat:ital,wght@0,100..900;1,100..900&display=swap" />
         <style>
           body {
             margin: 0;
@@ -6428,10 +7503,10 @@
             height: 540px;
             overflow: hidden;
           }
-          ${cssContent}
+          ${cleanCss}
         </style>
       </head>
-      <body>
+      <body class="${window.designerConfig.body_class || ''}">
         ${htmlContent}
       </body>
       </html>
@@ -6441,12 +7516,25 @@
     // Setup event handlers and contenteditable inside Iframe Document
     iframe.onload = () => {
       const doc = iframe.contentDocument || iframe.contentWindow.document;
+      const cardWrapper = doc.body.firstElementChild;
       
-      // Render custom fields on top of template inside Iframe
-      if (window.designerConfig.fields) {
-        // Find wrapper card inside iframe
-        const cardWrapper = doc.body.firstElementChild;
-        if (cardWrapper) {
+      if (cardWrapper) {
+        // Measure natural dimensions
+        cardWrapper.style.transition = 'none';
+        cardWrapper.style.margin = '0';
+        cardWrapper.style.transform = 'none';
+        
+        const naturalW = cardWrapper.getBoundingClientRect().width || cardWrapper.offsetWidth || 340;
+        const naturalH = cardWrapper.getBoundingClientRect().height || cardWrapper.offsetHeight || 540;
+        
+        // Scale to fit standard 340x540 viewport
+        const scale = Math.min(340 / naturalW, 540 / naturalH);
+        cardWrapper.style.transformOrigin = 'center center';
+        cardWrapper.style.transform = `scale(${scale})`;
+        cardWrapper.style.flexShrink = '0';
+        
+        // Render custom fields
+        if (window.designerConfig.fields) {
           window.designerConfig.fields.forEach((f, idx) => {
             let fieldEl = doc.getElementById(`preview-field-${idx}`);
             if (!fieldEl) {
@@ -6457,30 +7545,93 @@
             }
             
             const rgbToCss = (rgb) => rgb ? `rgb(${rgb.join(',')})` : 'rgb(255,255,255)';
-            const scaleX = 340 / 600;
-            const scaleY = 540 / 900;
-            const x = Math.round(f.x * scaleX);
-            const y = Math.round(f.y * scaleY);
+            const x = Math.round(f.x * (naturalW / 600));
+            const y = Math.round(f.y * (naturalH / 900));
             
-            fieldEl.textContent = f.text || '';
-            fieldEl.style.position = 'absolute';
-            fieldEl.style.fontSize = `${Math.round(f.font_size * 0.6)}px`;
-            fieldEl.style.color = rgbToCss(f.color);
-            fieldEl.style.top = `${y}px`;
-            fieldEl.style.zIndex = '50';
-            
-            if (f.align === 'center') {
-              fieldEl.style.left = '0';
-              fieldEl.style.width = '100%';
-              fieldEl.style.textAlign = 'center';
-            } else if (f.align === 'left') {
+            const isImg = (f.type === 'image');
+            if (isImg) {
+              // Image Field Rendering
+              fieldEl.textContent = '';
+              let imgEl = fieldEl.querySelector('img');
+              if (!imgEl) {
+                imgEl = doc.createElement('img');
+                imgEl.className = 'w-full h-full object-contain';
+                imgEl.style.display = 'block';
+                fieldEl.appendChild(imgEl);
+              }
+              
+              let src = f.image_url || '/static/uploads/logo.png';
+              if (f.bind_column && f.bind_column.toLowerCase().includes('photo')) {
+                src = "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=200";
+              }
+              imgEl.src = src;
+              
+              const imgW = Math.round((f.width || 100) * (naturalW / 600));
+              const imgH = Math.round((f.height || 100) * (naturalH / 900));
+              
+              fieldEl.style.position = 'absolute';
               fieldEl.style.left = `${x}px`;
-              fieldEl.style.width = 'auto';
-              fieldEl.style.textAlign = 'left';
-            } else if (f.align === 'right') {
-              fieldEl.style.right = `${340 - x}px`;
-              fieldEl.style.width = 'auto';
-              fieldEl.style.textAlign = 'right';
+              fieldEl.style.top = `${y}px`;
+              fieldEl.style.width = `${imgW}px`;
+              fieldEl.style.height = `${imgH}px`;
+              fieldEl.style.zIndex = '50';
+              fieldEl.style.textAlign = '';
+              fieldEl.style.fontSize = '';
+              fieldEl.style.color = '';
+              fieldEl.style.fontWeight = '';
+              fieldEl.style.fontStyle = '';
+              fieldEl.style.textDecoration = '';
+              fieldEl.style.textTransform = '';
+              fieldEl.style.letterSpacing = '';
+              fieldEl.style.fontFamily = '';
+            } else {
+              // Text Field Rendering
+              const imgEl = fieldEl.querySelector('img');
+              if (imgEl) imgEl.remove();
+              
+              const fontSize = Math.round(f.font_size * (naturalW / 600));
+              fieldEl.textContent = f.text || '';
+              fieldEl.style.position = 'absolute';
+              fieldEl.style.fontSize = `${fontSize}px`;
+              fieldEl.style.color = rgbToCss(f.color);
+              fieldEl.style.top = `${y}px`;
+              fieldEl.style.zIndex = '50';
+              
+              fieldEl.style.textDecoration = f.underline ? 'underline' : 'none';
+              fieldEl.style.textTransform = f.transform || 'none';
+              
+              // Font mapping
+              let font = 'Inter, sans-serif';
+              if (f.font_name === 'Outfit') font = 'Outfit, sans-serif';
+              else if (f.font_name === 'Roboto Mono') font = '"Roboto Mono", monospace';
+              else if (f.font_name === 'Georgia') font = 'Georgia, serif';
+              else if (f.font_name === 'Playfair Display') font = '"Playfair Display", serif';
+              else if (f.font_name === 'Montserrat') font = 'Montserrat, sans-serif';
+              else if (f.font_name === 'Arial') font = 'Arial, sans-serif';
+              fieldEl.style.fontFamily = font;
+              
+              // Tracking (letter spacing)
+              let tracking = 'normal';
+              if (f.tracking === 'wide') tracking = '0.1em';
+              else if (f.tracking === 'extra_wide') tracking = '0.25em';
+              fieldEl.style.letterSpacing = tracking;
+              
+              if (f.align === 'center') {
+                fieldEl.style.left = '0';
+                fieldEl.style.width = '100%';
+                fieldEl.style.textAlign = 'center';
+              } else if (f.align === 'left') {
+                fieldEl.style.left = `${x}px`;
+                fieldEl.style.width = 'auto';
+                fieldEl.style.textAlign = 'left';
+              } else if (f.align === 'right') {
+                fieldEl.style.right = `${naturalW - x}px`;
+                fieldEl.style.width = 'auto';
+                fieldEl.style.textAlign = 'right';
+              }
+              fieldEl.style.fontWeight = f.bold ? 'bold' : 'normal';
+              fieldEl.style.fontStyle = f.italic ? 'italic' : 'normal';
+              fieldEl.style.height = '';
             }
             
             fieldEl.style.cursor = 'pointer';
@@ -6488,31 +7639,157 @@
             if (idx === window.selectedFieldId) {
               fieldEl.style.border = '1px dashed #00f5a0';
               fieldEl.style.background = 'rgba(0, 245, 160, 0.08)';
+            } else {
+              fieldEl.style.border = 'none';
+              fieldEl.style.background = 'transparent';
             }
             
             fieldEl.onclick = (e) => {
               e.stopPropagation();
-              // Select field in parent dropdown
               const parentSelect = window.parent.document.getElementById('designer-selected-field') || document.getElementById('designer-selected-field');
               if (parentSelect) {
                 parentSelect.value = idx;
                 window.onDesignerFieldSelected(idx);
               }
             };
+
+            // Drag and Drop (Mouse / Touch) Event Listeners
+            let isDragging = false;
+            let startX, startY;
+            let startFieldX, startFieldY;
+            
+            const handleDragStart = (clientX, clientY) => {
+              if (window.designerHistory && typeof window.designerHistory.saveState === 'function') {
+                window.designerHistory.saveState();
+              } else if (window.parent && window.parent.designerHistory && typeof window.parent.designerHistory.saveState === 'function') {
+                window.parent.designerHistory.saveState();
+              }
+              
+              const parentSelect = window.parent.document.getElementById('designer-selected-field') || document.getElementById('designer-selected-field');
+              if (parentSelect) {
+                parentSelect.value = idx;
+                window.onDesignerFieldSelected(idx);
+              }
+              
+              isDragging = true;
+              startX = clientX;
+              startY = clientY;
+              startFieldX = f.x;
+              startFieldY = f.y;
+            };
+            
+            const handleDragMove = (clientX, clientY) => {
+              if (!isDragging) return;
+              const dx = clientX - startX;
+              const dy = clientY - startY;
+              
+              const rect = cardWrapper.getBoundingClientRect();
+              const canvasDx = dx * (600 / rect.width);
+              const canvasDy = dy * (900 / rect.height);
+              
+              let newX = Math.round(startFieldX + canvasDx);
+              let newY = Math.round(startFieldY + canvasDy);
+              
+              newX = Math.max(0, Math.min(600, newX));
+              newY = Math.max(0, Math.min(900, newY));
+              
+              f.x = newX;
+              f.y = newY;
+              
+              const scaleX = naturalW / 600;
+              const scaleY = naturalH / 900;
+              if (f.align === 'left' || isImg) {
+                fieldEl.style.left = `${Math.round(f.x * scaleX)}px`;
+              } else if (f.align === 'right') {
+                fieldEl.style.right = `${Math.round((600 - f.x) * scaleX)}px`;
+              }
+              fieldEl.style.top = `${Math.round(f.y * scaleY)}px`;
+              
+              const sliderX = window.parent.document.getElementById('designer-slider-x') || document.getElementById('designer-slider-x');
+              const valX = window.parent.document.getElementById('designer-val-x') || document.getElementById('designer-val-x');
+              const sliderY = window.parent.document.getElementById('designer-slider-y') || document.getElementById('designer-slider-y');
+              const valY = window.parent.document.getElementById('designer-val-y') || document.getElementById('designer-val-y');
+              
+              if (sliderX) sliderX.value = f.x;
+              if (valX) valX.textContent = f.x;
+              if (sliderY) sliderY.value = f.y;
+              if (valY) valY.textContent = f.y;
+            };
+            
+            const handleDragEnd = () => {
+              if (!isDragging) return;
+              isDragging = false;
+              renderDesignerPreview();
+            };
+            
+            fieldEl.onmousedown = (e) => {
+              if (e.button !== 0) return;
+              e.preventDefault();
+              e.stopPropagation();
+              handleDragStart(e.clientX, e.clientY);
+              
+              const onMouseMove = (ev) => {
+                ev.preventDefault();
+                ev.stopPropagation();
+                handleDragMove(ev.clientX, ev.clientY);
+              };
+              
+              const onMouseUp = (ev) => {
+                ev.preventDefault();
+                ev.stopPropagation();
+                doc.removeEventListener('mousemove', onMouseMove);
+                doc.removeEventListener('mouseup', onMouseUp);
+                handleDragEnd();
+              };
+              
+              doc.addEventListener('mousemove', onMouseMove);
+              doc.addEventListener('mouseup', onMouseUp);
+            };
+            
+            fieldEl.ontouchstart = (e) => {
+              if (e.touches.length !== 1) return;
+              e.preventDefault();
+              e.stopPropagation();
+              const touch = e.touches[0];
+              handleDragStart(touch.clientX, touch.clientY);
+              
+              const onTouchMove = (ev) => {
+                if (ev.touches.length !== 1) return;
+                ev.preventDefault();
+                ev.stopPropagation();
+                const t = ev.touches[0];
+                handleDragMove(t.clientX, t.clientY);
+              };
+              
+              const onTouchEnd = (ev) => {
+                ev.preventDefault();
+                ev.stopPropagation();
+                doc.removeEventListener('touchmove', onTouchMove);
+                doc.removeEventListener('touchend', onTouchEnd);
+                handleDragEnd();
+              };
+              
+              doc.addEventListener('touchmove', onTouchMove, { passive: false });
+              doc.addEventListener('touchend', onTouchEnd);
+            };
           });
         }
       }
-      
       // Inline Editing handlers inside Iframe
       doc.addEventListener('click', (e) => {
         const target = e.target;
         if (!target || target === doc.body || target === doc.documentElement) return;
         
-        // Skip QR codes or images
         if (target.tagName.toLowerCase() === 'img') return;
         
         if (target.getAttribute('contenteditable') === 'true') return;
         
+        if (window.designerHistory && typeof window.designerHistory.saveState === 'function') {
+          window.designerHistory.saveState();
+        } else if (window.parent && window.parent.designerHistory && typeof window.parent.designerHistory.saveState === 'function') {
+          window.parent.designerHistory.saveState();
+        }
+
         target.contentEditable = "true";
         target.focus();
         
@@ -6530,19 +7807,15 @@
               }
             }
           } else if (window.designerConfig.mode === 'custom_html') {
-            // Get card HTML element
             const cardWrapper = doc.body.firstElementChild;
             if (cardWrapper) {
-              // Create clone to serialize without absolute fields
               const clone = cardWrapper.cloneNode(true);
               const absFields = clone.querySelectorAll('.preview-absolute-field');
               absFields.forEach(el => el.remove());
               
-              // Remove edit borders or contenteditables
               clone.removeAttribute('contenteditable');
               clone.querySelectorAll('[contenteditable]').forEach(el => el.removeAttribute('contenteditable'));
               
-              // Save template HTML
               window.designerConfig.html = clone.outerHTML;
             }
           }
@@ -6553,6 +7826,22 @@
           if (ev.key === 'Enter') {
             ev.preventDefault();
             target.blur();
+          } else if (ev.key === 'Backspace' || ev.key === 'Delete') {
+            if (target.textContent.length <= 1) {
+              setTimeout(() => {
+                if (target.textContent.trim() === '') {
+                  target.innerHTML = '&nbsp;';
+                  try {
+                    const range = doc.createRange();
+                    const sel = iframe.contentWindow.getSelection();
+                    range.selectNodeContents(target);
+                    range.collapse(false);
+                    sel.removeAllRanges();
+                    sel.addRange(range);
+                  } catch (err) {}
+                }
+              }, 10);
+            }
           }
         });
       });
@@ -6722,6 +8011,7 @@
 
   window.resetDesignerConfig = function() {
     if (confirm("Are you sure you want to reset the visual designer configuration for this target?")) {
+      window.designerHistory.saveState();
       window.designerConfig = {
         mode: "custom",
         bg_start: [11, 15, 25],
@@ -6738,6 +8028,8 @@
     }
   };
 
+  // Initial call inside onload or module loading
+  window.initCardDesigner();
   // Initial call inside onload or module loading
   window.initCardDesigner();
   // Initial call inside onload or module loading
@@ -6814,6 +8106,359 @@
       }
     });
   }
+
+  // ── Roster Overseer Hub & Global Logo Javascript Logic ─────────────────────
+  let hubCurrentIndex = 0;
+  
+  // 1. Get Initials SVG Data URI
+  function getInitialsSvgUri(name) {
+    name = (name || "Guest").trim();
+    let parts = name.split(/\s+/);
+    let initials = "G";
+    if (parts.length >= 2) {
+      initials = parts[0][0].toUpperCase() + parts[parts.length - 1][0].toUpperCase();
+    } else if (parts.length === 1 && parts[0]) {
+      initials = parts[0].substring(0, 2).toUpperCase();
+    }
+    const colors = [
+      "#2ecc71", "#3498db", "#9b59b6", "#e67e22", "#e74c3c",
+      "#1abc9c", "#f1c40f", "#8e44ad", "#d35400", "#c0392b"
+    ];
+    let hash = 0;
+    for (let i = 0; i < name.length; i++) {
+      hash = name.charCodeAt(i) + ((hash << 5) - hash);
+    }
+    const color = colors[Math.abs(hash) % colors.length];
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="200" height="200"><circle cx="100" cy="100" r="100" fill="${color}" /><text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" fill="#ffffff" font-family="system-ui, sans-serif" font-weight="bold" font-size="80">${initials}</text></svg>`;
+    return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
+  }
+  window.getInitialsSvgUri = getInitialsSvgUri;
+
+  // 2. Open Verify Hub
+  window.openVerifyHub = function(optRegNo) {
+    if (!window.allAttendeesCache || window.allAttendeesCache.length === 0) {
+      showDashboardToast('Roster Empty', 'No registered attendees to oversee.', 'err');
+      return;
+    }
+    
+    // Populate select dropdown
+    const select = document.getElementById('verify-hub-select');
+    if (select) {
+      select.innerHTML = '';
+      window.allAttendeesCache.forEach((att, idx) => {
+        const opt = document.createElement('option');
+        opt.value = att.reg_no;
+        opt.textContent = `${idx + 1}. ${att.name || 'Guest'} (${att.reg_no})`;
+        select.appendChild(opt);
+      });
+    }
+    
+    let targetIndex = 0;
+    if (optRegNo) {
+      targetIndex = window.allAttendeesCache.findIndex(att => att.reg_no === optRegNo);
+      if (targetIndex === -1) targetIndex = 0;
+    }
+    
+    hubCurrentIndex = targetIndex;
+    const modal = document.getElementById('id-roster-verify-hub-modal');
+    if (modal) modal.classList.add('active');
+    window.loadAttendeeInHubByIndex(hubCurrentIndex);
+  };
+
+  // 3. Close Verify Hub
+  window.closeVerifyHub = function() {
+    const modal = document.getElementById('id-roster-verify-hub-modal');
+    if (modal) modal.classList.remove('active');
+  };
+
+  // 4. Load Attendee by Index
+  window.loadAttendeeInHubByIndex = function(index) {
+    if (!window.allAttendeesCache || index < 0 || index >= window.allAttendeesCache.length) return;
+    hubCurrentIndex = index;
+    const att = window.allAttendeesCache[hubCurrentIndex];
+    
+    // Update navigation select
+    const select = document.getElementById('verify-hub-select');
+    if (select) select.value = att.reg_no;
+    
+    // Update inputs
+    const regNoEl = document.getElementById('verify-hub-reg-no');
+    if (regNoEl) regNoEl.value = att.reg_no;
+    const nameEl = document.getElementById('verify-hub-name');
+    if (nameEl) nameEl.value = att.name || '';
+    
+    // Find subgroup
+    const sgEl = document.getElementById('verify-hub-subgroup');
+    if (sgEl) sgEl.value = att.subgroup || att.level || '';
+    const emailEl = document.getElementById('verify-hub-email');
+    if (emailEl) emailEl.value = att.email || '';
+    const phoneEl = document.getElementById('verify-hub-phone');
+    if (phoneEl) phoneEl.value = att.phone || '';
+    
+    // Find photo field
+    const photoUrlEl = document.getElementById('verify-hub-photo-url');
+    if (photoUrlEl) photoUrlEl.value = att.profile_photo || att.photo || '';
+    
+    // Clear copy overrides
+    const emailSubEl = document.getElementById('verify-hub-email-subject');
+    if (emailSubEl) emailSubEl.value = '';
+    const emailBodyEl = document.getElementById('verify-hub-email-body');
+    if (emailBodyEl) emailBodyEl.value = '';
+    const waBodyEl = document.getElementById('verify-hub-whatsapp-body');
+    if (waBodyEl) waBodyEl.value = '';
+    
+    // Set index & status labels
+    const idxEl = document.getElementById('verify-hub-index');
+    if (idxEl) idxEl.textContent = `Attendee ${hubCurrentIndex + 1} of ${window.allAttendeesCache.length}`;
+    
+    let statusParts = [];
+    if (att.email_sent && att.email_sent.toLowerCase() !== 'not sent') statusParts.push(`Email: ${att.email_sent}`);
+    if (att.wa_sent && att.wa_sent.toLowerCase() !== 'not sent') statusParts.push(`WA: ${att.wa_sent}`);
+    if (att.sms_sent && att.sms_sent.toLowerCase() !== 'not sent') statusParts.push(`SMS: ${att.sms_sent}`);
+    const badgeEl = document.getElementById('verify-hub-sent-badge');
+    if (badgeEl) badgeEl.textContent = `Status: ` + (statusParts.join(' | ') || 'Not Sent');
+    
+    // Update preview
+    window.refreshHubPreview();
+  };
+
+  // Load Attendee by Registration Number
+  window.loadAttendeeInHub = function(regNo) {
+    const idx = window.allAttendeesCache.findIndex(att => att.reg_no === regNo);
+    if (idx !== -1) {
+      window.saveHubChanges(false);
+      window.loadAttendeeInHubByIndex(idx);
+    }
+  };
+
+  // 5. Navigate Hub (Prev/Next)
+  window.navigateHub = function(dir) {
+    window.saveHubChanges(false);
+    
+    let newIndex = hubCurrentIndex + dir;
+    if (newIndex >= window.allAttendeesCache.length) {
+      newIndex = 0;
+    } else if (newIndex < 0) {
+      newIndex = window.allAttendeesCache.length - 1;
+    }
+    window.loadAttendeeInHubByIndex(newIndex);
+  };
+
+  // 6. Save Hub Changes
+  window.saveHubChanges = function(showToast = true) {
+    const regNoEl = document.getElementById('verify-hub-reg-no');
+    const regNo = regNoEl ? regNoEl.value : '';
+    if (!regNo) return Promise.resolve();
+    
+    const payload = {
+      reg_no: regNo,
+      name: document.getElementById('verify-hub-name').value.trim(),
+      subgroup: document.getElementById('verify-hub-subgroup').value.trim(),
+      email: document.getElementById('verify-hub-email').value.trim(),
+      phone: document.getElementById('verify-hub-phone').value.trim(),
+      profile_photo: document.getElementById('verify-hub-photo-url').value.trim()
+    };
+    
+    return fetch('/update_attendee_details', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    })
+    .then(r => r.json())
+    .then(data => {
+      if (data.success) {
+        const idx = window.allAttendeesCache.findIndex(att => att.reg_no === regNo);
+        if (idx !== -1) {
+          window.allAttendeesCache[idx] = {
+            ...window.allAttendeesCache[idx],
+            name: payload.name,
+            subgroup: payload.subgroup,
+            email: payload.email,
+            phone: payload.phone,
+            profile_photo: payload.profile_photo,
+            level: payload.subgroup
+          };
+          
+          const tbl = $('#registry-table').DataTable();
+          if (tbl) {
+            tbl.ajax.reload(null, false); 
+          }
+        }
+        if (showToast) {
+          showDashboardToast('Details Saved', 'Roster record updated successfully.', 'ok');
+          window.refreshHubPreview();
+        }
+      } else {
+        if (showToast) showDashboardToast('Save Failed', data.message || 'Error occurred.', 'err');
+      }
+    })
+    .catch(err => {
+      console.error(err);
+      if (showToast) showDashboardToast('Error', 'Failed to update attendee record.', 'err');
+    });
+  };
+
+  // 7. Upload Hub Photo
+  window.uploadHubPhoto = function(input) {
+    if (!input.files || input.files.length === 0) return;
+    const regNoEl = document.getElementById('verify-hub-reg-no');
+    const regNo = regNoEl ? regNoEl.value : '';
+    if (!regNo) return;
+    
+    const file = input.files[0];
+    const formData = new FormData();
+    formData.append('file', file);
+    
+    showDashboardToast('Uploading', 'Uploading portrait file...', 'ok');
+    
+    fetch(`/upload_profile_photo/${encodeURIComponent(regNo)}`, {
+      method: 'POST',
+      body: formData
+    })
+    .then(r => r.json())
+    .then(data => {
+      if (data.success) {
+        showDashboardToast('Upload Success', 'Profile portrait uploaded successfully.', 'ok');
+        const photoUrlVal = data.url || `/static/profile_photos/photo_${regNo}.png`;
+        const urlInput = document.getElementById('verify-hub-photo-url');
+        if (urlInput) urlInput.value = photoUrlVal;
+        
+        window.saveHubChanges(false).then(() => {
+          window.refreshHubPreview();
+        });
+      } else {
+        showDashboardToast('Upload Failed', data.message || 'Error uploading file.', 'err');
+      }
+    })
+    .catch(err => {
+      console.error(err);
+      showDashboardToast('Upload Error', 'Failed to upload photo file.', 'err');
+    });
+  };
+
+  // 8. Refresh Preview
+  window.refreshHubPreview = function() {
+    const regNoEl = document.getElementById('verify-hub-reg-no');
+    const regNo = regNoEl ? regNoEl.value : '';
+    if (!regNo) return;
+    const spinner = document.getElementById('verify-hub-preview-spinner');
+    if (spinner) spinner.style.display = 'flex';
+    const img = document.getElementById('verify-hub-preview-img');
+    if (img) {
+      img.onload = () => {
+        if (spinner) spinner.style.display = 'none';
+      };
+      img.onerror = () => {
+        if (spinner) spinner.style.display = 'none';
+      };
+      img.src = '/preview_id_card?reg_no=' + encodeURIComponent(regNo) + '&t=' + Date.now();
+    }
+  };
+
+  // 9. Send Hub Notification
+  window.sendHubNotification = function(channel) {
+    const regNoEl = document.getElementById('verify-hub-reg-no');
+    const regNo = regNoEl ? regNoEl.value : '';
+    if (!regNo) return;
+    
+    const emailBtn = document.getElementById('verify-hub-send-email-btn');
+    const waBtn = document.getElementById('verify-hub-send-wa-btn');
+    const bothBtn = document.getElementById('verify-hub-send-both-btn');
+    if (emailBtn) emailBtn.disabled = true;
+    if (waBtn) waBtn.disabled = true;
+    if (bothBtn) bothBtn.disabled = true;
+    
+    window.saveHubChanges(false).then(() => {
+      const payload = {
+        reg_no: regNo,
+        channel: channel,
+        email_subject: document.getElementById('verify-hub-email-subject').value.trim() || null,
+        email_body: document.getElementById('verify-hub-email-body').value.trim() || null,
+        whatsapp_body: document.getElementById('verify-hub-whatsapp-body').value.trim() || null
+      };
+      
+      showDashboardToast('Sending', `Sending invitation via ${channel}...`, 'ok');
+      
+      fetch('/send_id_card_single', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      })
+      .then(r => r.json())
+      .then(data => {
+        if (data.success) {
+          showDashboardToast('Sent', `Notification sent successfully via ${channel}.`, 'ok');
+          
+          const idx = window.allAttendeesCache.findIndex(att => att.reg_no === regNo);
+          if (idx !== -1) {
+            if (channel === 'email' || channel === 'both') window.allAttendeesCache[idx].email_sent = 'Sent';
+            if (channel === 'whatsapp' || channel === 'both') window.allAttendeesCache[idx].wa_sent = 'Sent';
+            
+            let statusParts = [];
+            const att = window.allAttendeesCache[idx];
+            if (att.email_sent && att.email_sent.toLowerCase() !== 'not sent') statusParts.push(`Email: ${att.email_sent}`);
+            if (att.wa_sent && att.wa_sent.toLowerCase() !== 'not sent') statusParts.push(`WA: ${att.wa_sent}`);
+            if (att.sms_sent && att.sms_sent.toLowerCase() !== 'not sent') statusParts.push(`SMS: ${att.sms_sent}`);
+            const badgeEl = document.getElementById('verify-hub-sent-badge');
+            if (badgeEl) badgeEl.textContent = `Status: ` + (statusParts.join(' | ') || 'Not Sent');
+          }
+          
+          const tbl = $('#registry-table').DataTable();
+          if (tbl) {
+            tbl.ajax.reload(null, false);
+          }
+          
+          setTimeout(() => {
+            window.navigateHub(1);
+          }, 1500);
+        } else {
+          showDashboardToast('Failed', data.message || 'Failed to send.', 'err');
+        }
+      })
+      .catch(err => {
+        console.error(err);
+        showDashboardToast('Error', 'Failed to send notification.', 'err');
+      })
+      .finally(() => {
+        if (emailBtn) emailBtn.disabled = false;
+        if (waBtn) waBtn.disabled = false;
+        if (bothBtn) bothBtn.disabled = false;
+      });
+    });
+  };
+
+  // 10. Upload Global Logo
+  window.uploadGlobalLogo = function(input) {
+    if (!input.files || input.files.length === 0) return;
+    const file = input.files[0];
+    const formData = new FormData();
+    formData.append('file', file);
+    
+    showDashboardToast('Uploading Logo', 'Uploading global event logo...', 'ok');
+    
+    fetch('/upload_global_logo', {
+      method: 'POST',
+      body: formData
+    })
+    .then(r => r.json())
+    .then(data => {
+      if (data.success) {
+        showDashboardToast('Logo Uploaded', 'Global logo updated successfully.', 'ok');
+        const logoPreview = document.getElementById('cfg-global-logo-preview');
+        if (logoPreview) {
+          logoPreview.style.display = 'block';
+          logoPreview.src = `/static/uploads/logo.png?t=${Date.now()}`;
+        }
+        renderDesignerPreview();
+      } else {
+        showDashboardToast('Upload Failed', data.message || 'Error occurred.', 'err');
+      }
+    })
+    .catch(err => {
+      console.error(err);
+      showDashboardToast('Error', 'Failed to upload logo image.', 'err');
+    });
+  };
 
 window.initCardDesigner();
 </script>
@@ -6897,6 +8542,7 @@ window.initCardDesigner();
 <button class="ops-btn" id="preview-confirm-btn" style="width: auto; margin: 0; padding: 10px 24px;">Confirm &amp; Import</button>
 </div>
 </div>
+</div>
 <!-- Help Modal -->
 <div class="help-modal" id="help-modal">
 <div class="help-modal-content">
@@ -6932,6 +8578,258 @@ window.initCardDesigner();
 </div>
 </div>
 </div>
+<!-- ID Card Import Help Modal -->
+<div class="help-modal" id="id-import-help-modal">
+<div class="help-modal-content" style="max-width: 650px;">
+<div class="help-modal-header">
+<div class="help-modal-title">🎨 ID Card Template Format Guide</div>
+<button class="help-modal-close" onclick="window.closeImportHelpModal()">×</button>
+</div>
+<div class="help-modal-body" style="padding: 16px 20px; max-height: 70vh; overflow-y: auto;">
+  <p style="font-size: 0.8rem; color: var(--foreground); margin-bottom: 12px; line-height: 1.5;">
+    To import a custom HTML badge template, prepare a single self-contained HTML file (`.html`). Below is the expected format and conventions:
+  </p>
+  
+  <h4 style="color: var(--accent); font-size: 0.82rem; margin-top: 14px; margin-bottom: 6px; text-transform: uppercase;">1. Canvas Layout & Styling</h4>
+  <ul style="font-size: 0.76rem; color: var(--muted); list-style-type: disc; margin-left: 20px; line-height: 1.5; margin-bottom: 12px;">
+    <li>The main badge card element must have the class `cr80-card` with an aspect ratio scaled to width `337.5px` and height `531px` (CR80 proportions).</li>
+    <li>Use custom Tailwind classes inside the elements (e.g., `bg-primary`, `text-on-surface`, `rounded-[24px]`).</li>
+    <li>Write inline custom styles inside a `<style>` block if needed.</li>
+  </ul>
+
+  <h4 style="color: var(--accent); font-size: 0.82rem; margin-top: 14px; margin-bottom: 6px; text-transform: uppercase;">2. Dynamic Placeholders</h4>
+  <p style="font-size: 0.76rem; color: var(--muted); margin-bottom: 8px; line-height: 1.4;">
+    The system will search and substitute these exact strings with attendee data:
+  </p>
+  <table style="width: 100%; border-collapse: collapse; font-size: 0.72rem; color: var(--muted); margin-bottom: 14px; border: 1px solid var(--border);">
+    <thead>
+      <tr style="background: rgba(255,255,255,0.02); border-bottom: 1px solid var(--border);">
+        <th style="padding: 6px 10px; text-align: left; font-weight: bold; color: var(--foreground);">Placeholder</th>
+        <th style="padding: 6px 10px; text-align: left; font-weight: bold; color: var(--foreground);">Description</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr style="border-bottom: 1px solid var(--border);">
+        <td style="padding: 6px 10px; font-family: var(--mono); color: var(--accent2); font-weight: bold;">{Name}</td>
+        <td style="padding: 6px 10px;">Full Name of the attendee (e.g. John Doe).</td>
+      </tr>
+      <tr style="border-bottom: 1px solid var(--border);">
+        <td style="padding: 6px 10px; font-family: var(--mono); color: var(--accent2); font-weight: bold;">{Pass Type}</td>
+        <td style="padding: 6px 10px;">Designation / Registration Level (e.g. VIP, Presenter).</td>
+      </tr>
+      <tr style="border-bottom: 1px solid var(--border);">
+        <td style="padding: 6px 10px; font-family: var(--mono); color: var(--accent2); font-weight: bold;">{Registration Number}</td>
+        <td style="padding: 6px 10px;">ID Serial number / Registration ID.</td>
+      </tr>
+      <tr style="border-bottom: 1px solid var(--border);">
+        <td style="padding: 6px 10px; font-family: var(--mono); color: var(--accent2); font-weight: bold;">{Unique ID}</td>
+        <td style="padding: 6px 10px;">Unique system key (UUID hash).</td>
+      </tr>
+      <tr style="border-bottom: 1px solid var(--border);">
+        <td style="padding: 6px 10px; font-family: var(--mono); color: var(--accent2); font-weight: bold;">{QR_CODE_URL}</td>
+        <td style="padding: 6px 10px;">Source URL for the attendee QR Code image (`&lt;img src="{QR_CODE_URL}" /&gt;`).</td>
+      </tr>
+      <tr style="border-bottom: 1px solid var(--border);">
+        <td style="padding: 6px 10px; font-family: var(--mono); color: var(--accent2); font-weight: bold;">{PHOTO_URL}</td>
+        <td style="padding: 6px 10px;">Source URL for the attendee portrait photo (`&lt;img src="{PHOTO_URL}" /&gt;`).</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h4 style="color: var(--accent); font-size: 0.82rem; margin-top: 14px; margin-bottom: 6px; text-transform: uppercase;">3. Tailwind Custom Colors Configuration</h4>
+  <p style="font-size: 0.76rem; color: var(--muted); margin-bottom: 8px; line-height: 1.4;">
+    To define custom Material Design 3 hex colors (e.g. `bg-primary-container`), write them in a `<script>` tag matching this exact pattern:
+  </p>
+  <pre style="background: rgba(0,0,0,0.3); border: 1px solid var(--border); padding: 8px; border-radius: 6px; font-family: var(--mono); font-size: 0.68rem; color: var(--accent2); overflow-x: auto; white-space: pre; margin-bottom: 12px;">
+&lt;script&gt;
+  tailwind.config = {
+    theme: {
+      extend: {
+        colors: {
+          "primary": "#8b5cf6",
+          "primary-container": "#2e1065",
+          "surface-container-lowest": "#ffffff",
+          "on-background": "#121c2a"
+        }
+      }
+    }
+  };
+&lt;/script&gt;</pre>
+</div>
+</div>
+</div>
+
+<!-- Live Scan Log History Modal -->
+<div class="help-modal" id="id-scan-history-modal">
+  <div class="help-modal-content" style="max-width: 600px;">
+    <div class="help-modal-header">
+      <div class="help-modal-title">📋 Attendee Scan History</div>
+      <button class="help-modal-close" id="btn-close-scan-history">×</button>
+    </div>
+    <div class="help-modal-body" style="padding: 16px 20px; max-height: 70vh; overflow-y: auto;">
+      <!-- Attendee Details -->
+      <div style="background: rgba(255,255,255,0.02); border: 1px solid var(--border); border-radius: 8px; padding: 12px; margin-bottom: 16px;">
+        <h4 style="margin: 0 0 8px 0; color: var(--accent); font-size: 0.9rem;">Attendee Details</h4>
+        <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; font-size: 0.76rem;">
+          <div><span style="color: var(--muted);">Name:</span> <strong id="scan-hist-name" style="color: var(--text);"></strong></div>
+          <div><span style="color: var(--muted);">Reg Number:</span> <strong id="scan-hist-reg" style="color: var(--accent2); font-family: var(--mono);"></strong></div>
+          <div><span style="color: var(--muted);">Email:</span> <span id="scan-hist-email" style="color: var(--text);"></span></div>
+          <div><span style="color: var(--muted);">Phone:</span> <span id="scan-hist-phone" style="color: var(--text);"></span></div>
+          <div><span style="color: var(--muted);">Subgroup:</span> <span id="scan-hist-subgroup" style="color: var(--text);"></span></div>
+          <div><span style="color: var(--muted);">Total Scans:</span> <span id="scan-hist-total" style="color: var(--text); font-weight: bold;">0</span></div>
+        </div>
+      </div>
+      
+      <!-- List of Scan Timestamps and Devices -->
+      <h4 style="margin: 0 0 8px 0; color: var(--accent); font-size: 0.9rem;">Scan Timeline</h4>
+      <div style="border: 1px solid var(--border); border-radius: 8px; overflow: hidden;">
+        <table style="width: 100%; border-collapse: collapse; font-size: 0.74rem; text-align: left;">
+          <thead>
+            <tr style="background: rgba(255,255,255,0.04); border-bottom: 1px solid var(--border);">
+              <th style="padding: 8px 12px; font-weight: bold; color: var(--foreground); width: 40px;">#</th>
+              <th style="padding: 8px 12px; font-weight: bold; color: var(--foreground); width: 180px;">Timestamp</th>
+              <th style="padding: 8px 12px; font-weight: bold; color: var(--foreground);">Scanner Device / Location</th>
+            </tr>
+          </thead>
+          <tbody id="scan-hist-timeline-body">
+            <!-- Dynamically populated rows -->
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Roster Overseer Hub Modal -->
+<div class="preview-modal" id="id-roster-verify-hub-modal">
+  <div class="preview-modal-content" style="max-width: 1100px; width: 95%;">
+    <div class="preview-modal-header">
+      <div class="preview-modal-title">🔍 Roster Overseer Hub (Verify & Send)</div>
+      <button class="preview-modal-close" onclick="window.closeVerifyHub()">×</button>
+    </div>
+    <div class="preview-modal-body" style="display: flex; gap: 20px; flex-direction: row; height: 70vh; overflow: hidden; padding: 15px 0;">
+      <!-- Left Side: Roster Navigation and Attendee Editor -->
+      <div style="flex: 1.2; display: flex; flex-direction: column; gap: 15px; overflow-y: auto; padding-right: 10px; border-right: 1px solid var(--border);">
+        
+        <!-- Navigation Toolbar -->
+        <div style="display: flex; justify-content: space-between; align-items: center; background: rgba(255,255,255,0.02); padding: 8px 12px; border-radius: 8px; border: 1px solid var(--border);">
+          <button class="ops-btn" onclick="window.navigateHub(-1)" style="margin: 0; width: auto; padding: 4px 10px; font-size: 0.76rem;">◀ Prev</button>
+          <div style="text-align: center;">
+            <span id="verify-hub-index" style="font-size: 0.8rem; font-weight: bold; color: var(--accent2);">Attendee 0 of 0</span>
+            <div id="verify-hub-sent-badge" style="font-size: 0.68rem; margin-top: 2px; color: var(--muted); font-family: var(--mono);">Status: Unknown</div>
+          </div>
+          <button class="ops-btn" onclick="window.navigateHub(1)" style="margin: 0; width: auto; padding: 4px 10px; font-size: 0.76rem;">Next ▶</button>
+        </div>
+
+        <!-- Quick Search Dropdown -->
+        <div class="form-group" style="margin: 0; display: flex; align-items: center; gap: 8px;">
+          <label class="form-label" style="font-size: 0.68rem; color: var(--muted); white-space: nowrap; margin: 0;">Jump to Attendee:</label>
+          <select class="form-input" id="verify-hub-select" onchange="window.loadAttendeeInHub(this.value)" style="height: 32px; padding: 4px 8px; font-size: 0.76rem; flex: 1;">
+            <!-- Populated dynamically -->
+          </select>
+        </div>
+
+        <!-- Edit Form Fields -->
+        <div style="display: flex; flex-direction: column; gap: 10px;">
+          <input type="hidden" id="verify-hub-reg-no" />
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+            <div class="form-group" style="margin: 0;">
+              <label class="form-label" style="font-size: 0.68rem;">Full Name</label>
+              <input class="form-input" id="verify-hub-name" type="text" style="height: 32px; font-size: 0.76rem;"/>
+            </div>
+            <div class="form-group" style="margin: 0;">
+              <label class="form-label" style="font-size: 0.68rem;">Subgroup/Category</label>
+              <input class="form-input" id="verify-hub-subgroup" type="text" style="height: 32px; font-size: 0.76rem;" placeholder="e.g. VIP, Presenter"/>
+            </div>
+          </div>
+          
+          <div style="display: grid; grid-template-columns: 1.2fr 0.8fr; gap: 10px;">
+            <div class="form-group" style="margin: 0;">
+              <label class="form-label" style="font-size: 0.68rem;">Email Address</label>
+              <input class="form-input" id="verify-hub-email" type="email" style="height: 32px; font-size: 0.76rem;"/>
+            </div>
+            <div class="form-group" style="margin: 0;">
+              <label class="form-label" style="font-size: 0.68rem;">Phone Number</label>
+              <input class="form-input" id="verify-hub-phone" type="text" style="height: 32px; font-size: 0.76rem;"/>
+            </div>
+          </div>
+
+          <!-- Photo Edit section -->
+          <div style="border: 1px dashed var(--border); border-radius: 8px; padding: 10px; background: rgba(0,245,160,0.02); margin-top: 5px;">
+            <div style="font-size: 0.7rem; font-weight: 700; color: var(--accent); margin-bottom: 6px; text-transform: uppercase;">Profile Portrait Settings</div>
+            <div class="form-group" style="margin-bottom: 8px;">
+              <label class="form-label" style="font-size: 0.65rem;">Image URL / Path (Supports Google Drive Photo link)</label>
+              <input class="form-input" id="verify-hub-photo-url" type="text" style="height: 30px; font-size: 0.72rem;" placeholder="e.g. https://drive.google.com/open?id=..."/>
+            </div>
+            <div style="display: flex; gap: 10px; align-items: center;">
+              <input type="file" id="verify-hub-photo-file" accept="image/*" style="display: none;" onchange="window.uploadHubPhoto(this)" />
+              <button type="button" class="download-btn" onclick="document.getElementById('verify-hub-photo-file').click()" style="margin: 0; padding: 5px 12px; font-size: 0.72rem; border-color: var(--accent2); color: var(--accent2);">
+                📤 Upload Custom Portrait File
+              </button>
+              <span style="font-size: 0.68rem; color: var(--muted);">Overrides Drive URL link</span>
+            </div>
+          </div>
+
+          <!-- Save Details Button -->
+          <button class="ops-btn" onclick="window.saveHubChanges(true)" style="margin: 5px 0 0 0; background: rgba(255,255,255,0.05); border-color: var(--border); color: var(--text); padding: 6px 12px; font-size: 0.74rem;">
+            💾 Save Roster Details
+          </button>
+
+          <!-- Message overrides -->
+          <div style="margin-top: 5px; border-top: 1px solid var(--border); padding-top: 10px;">
+            <div style="font-size: 0.7rem; font-weight: 700; color: var(--accent2); margin-bottom: 8px; text-transform: uppercase;">Override Message Copy (On the fly)</div>
+            <div class="form-group" style="margin-bottom: 8px;">
+              <label class="form-label" style="font-size: 0.65rem;">Email Subject Override</label>
+              <input class="form-input" id="verify-hub-email-subject" type="text" style="height: 30px; font-size: 0.74rem;" placeholder="e.g. Your Event Ticket is ready!"/>
+            </div>
+            <div class="form-group" style="margin-bottom: 8px;">
+              <label class="form-label" style="font-size: 0.65rem;">Email Body Copy (HTML or Text)</label>
+              <textarea class="form-input" id="verify-hub-email-body" style="height: 70px; font-size: 0.72rem; font-family: var(--mono); resize: vertical;" placeholder="Use default template or write custom body..."></textarea>
+            </div>
+            <div class="form-group" style="margin-bottom: 0;">
+              <label class="form-label" style="font-size: 0.65rem;">WhatsApp Message Copy</label>
+              <textarea class="form-input" id="verify-hub-whatsapp-body" style="height: 50px; font-size: 0.72rem; font-family: var(--mono); resize: vertical;" placeholder="Use default template or write custom text..."></textarea>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- Right Side: Live ID Card Preview and Send Controls -->
+      <div style="flex: 1; display: flex; flex-direction: column; gap: 15px; align-items: center; justify-content: space-between; overflow-y: auto;">
+        <div style="width: 100%; text-align: center;">
+          <div style="font-size: 0.75rem; font-weight: 700; color: var(--accent); margin-bottom: 6px; text-transform: uppercase;">Generated ID Badge Preview</div>
+          <div style="position: relative; width: 260px; height: 410px; margin: 0 auto; border-radius: 12px; box-shadow: 0 8px 25px rgba(0,0,0,0.5); overflow: hidden; background: #000; border: 1px solid var(--border);">
+            <img id="verify-hub-preview-img" src="" style="width: 100%; height: 100%; object-fit: contain; display: block;" />
+            <div id="verify-hub-preview-spinner" style="position: absolute; inset: 0; background: rgba(0,0,0,0.7); display: flex; align-items: center; justify-content: center; color: var(--accent); font-size: 0.8rem; font-weight: bold;">
+              Loading preview...
+            </div>
+          </div>
+          <button class="download-btn" onclick="window.refreshHubPreview()" style="margin: 8px auto 0 auto; padding: 4px 12px; font-size: 0.68rem; display: block; background: transparent; border-color: var(--border); color: var(--muted);">
+            🔄 Refresh Preview
+          </button>
+        </div>
+
+        <!-- Send Actions -->
+        <div style="width: 100%; background: rgba(0,0,0,0.2); padding: 12px; border-radius: 10px; border: 1px solid var(--border); display: flex; flex-direction: column; gap: 8px;">
+          <div style="font-size: 0.68rem; font-weight: 700; color: var(--muted); text-transform: uppercase; text-align: center;">Send Invitation Options</div>
+          <div style="display: flex; gap: 8px;">
+            <button id="verify-hub-send-email-btn" class="ops-btn" onclick="window.sendHubNotification('email')" style="margin:0; flex:1; padding: 8px; font-size: 0.72rem; background: var(--accent); border-color: var(--accent); color: #fff;">
+              📧 Email
+            </button>
+            <button id="verify-hub-send-wa-btn" class="ops-btn" onclick="window.sendHubNotification('whatsapp')" style="margin:0; flex:1; padding: 8px; font-size: 0.72rem; background: #25d366; border-color: #25d366; color: #fff;">
+              💬 WhatsApp
+            </button>
+          </div>
+          <button id="verify-hub-send-both-btn" class="ops-btn" onclick="window.sendHubNotification('both')" style="margin:0; padding: 8px; font-size: 0.72rem; background: var(--accent2); border-color: var(--accent2); color: #000;">
+            ✨ Send Both (Email & WhatsApp)
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- Silent Toast Container -->
 <div id="dashboard-toast-container"></div>
 </div></body>

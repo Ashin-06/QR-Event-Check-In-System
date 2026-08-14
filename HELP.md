@@ -1,108 +1,125 @@
-# ⬢ QR Event Check-In System — User Guide (HELP.md)
+# ⬢ QR Event Check-In System — Master System Guide & Documentation
 
-Welcome to the **QR Event Check-In System**! This application is a high-speed, secure, and scalable event management tool designed to import registration lists, automatically generate and embed QR/barcodes, distribute invitation passes, and track check-ins in real-time across multiple devices.
-
----
-
-## 🚀 Getting Started
-
-### 1. Launching the Server
-To start the application, double-click **`run_system.bat`** on the host machine. This will:
-1. Initialize the Flask backend server on `http://localhost:5001`.
-2. Output your **LAN Network URL** (e.g. `http://192.168.1.15:5001`) which allows other devices on the same Wi-Fi network to connect.
-3. Automatically launch the Manager Command Center in your default browser.
-
-### 2. Exposing to the Internet (Public Tunneling)
-If your check-in operators are using cellular data or are on a different Wi-Fi network:
-- Go to the **📡 Public Internet Tunnel** panel on your dashboard and click **"Start Public Tunnel"** (or run `start_public_tunnel.bat` manually).
-- The system will spin up a secure connection via `localhost.run` and display a public URL (e.g. `https://your-event.lhrtunnel.link`).
-- The tunnel has built-in **SSH TCP Keepalives** and an **automatic reconnect loop** to keep it active and stable indefinitely.
+Welcome to the **QR Event Check-In System**! This application is an enterprise-grade, high-speed, and secure event management platform. It allows you to manage guest rosters, design stunning custom ID badges, distribute passes across Email, WhatsApp, and SMS, and track attendee check-ins in real-time across multiple devices and entry gates.
 
 ---
 
-## 📂 Event Management
+## 🚀 1. Quick Start Guide (5-Minute Setup)
 
-### 1. Folder Structure
-All event data is isolated. When you create or switch events, the system reads and writes to:
-`qr_checkin_system/events/<Event_Name>/`
-
-Within each event folder, the system automatically creates:
-* **`registrations.xlsx`**: The primary Excel database containing attendee details, QR/barcode images, scan statuses, email/whatsapp receipt statuses, and timestamps.
-* **`scanned_log.csv`**: A lightweight, flat log of checked-in attendees.
-* **`qrcodes/` & `barcodes/`**: Directories storing generated image assets.
-* **`config.json`**: Custom email/SMS templates, Twilio credentials, and SMTP details.
-
-### 2. Sub-Events
-To create sub-events (e.g., "Day 1", "Workshop A") within a main event:
-- In the **📁 Event Explorer** sidebar, select a parent event, click **"Create Event / Sub-Event"**, choose the parent event, and give the sub-event a name.
-- It will create a sub-folder under the parent event folder (e.g., `events/Main Event/Workshop A/`) with its own separate registration and check-in database.
+1. **Launch the System**: Double-click **`START_SYSTEM.bat`** (or `run_system.bat`). This starts the backend server on `http://localhost:5001` and opens the Manager Dashboard in your browser.
+2. **Import or Add Attendees**: Click **⚙️ Operations** in the top bar, select **Import Spreadsheet** (or **Add Guest**), and upload your attendee list.
+3. **Customize ID Badges**: Click the **🎨 ID Card & Communications Hub** tab to choose a theme, adjust fonts/typography, and preview badges.
+4. **Send Passes**: Go to **Operations -> Bulk Send** to email or WhatsApp personalized passes with attached QR codes.
+5. **Start Scanning**: Click **📷 Open QR Scanner** on the dashboard or open the scanner URL on any mobile phone/tablet to check in attendees.
 
 ---
 
-## 📥 Registration & Roster Uploads
+## 📋 2. Main Navigation Tabs
 
-### 1. Importing Attendees (CSV or Excel)
-- Click the **"Import Roster"** button on the dashboard.
-- Upload any Excel (`.xlsx`) or CSV roster.
-- The system will open a **Preview & Duplicate Validation Modal**, analyzing all entries and mapping columns (Name, Email, Registration Number, Phone).
-- It checks for:
-  - Missing critical columns.
-  - Duplicates *within the file*.
-  - Duplicates *already present in the active event database*.
-- Organizers can opt to **Auto-Resolve Duplicates** (which automatically appends numeric suffixes to duplicate registration numbers) or skip them.
+### Tab A: `📋 Check-In & Logs`
+The real-time operational command center for door staff and event managers:
+* **Last Checked In Card**: Instantly displays the name, registration number, email, scan time, and scanner device name for the most recently checked-in guest.
+* **📈 Peak Arrivals Timeline**: An interactive arrival velocity chart that visualizes incoming attendee volume in customizable 5, 15, 30, or 60-minute intervals.
+* **Live Check-In Log Table**: Chronological table recording every scan attempt with timestamp, device name, and duplicate warnings.
+* **Device Filter**: Filter logs by specific scanner phones, webcams, or manual dashboard check-ins.
+* **Manual Check-In & Revoke**: Check in guests manually without a camera, or revoke/undo a previous scan with audit logging.
 
-### 2. Auto-Generating QR & Barcodes
-- Upon confirming the import (or manually adding an attendee), the system:
-  1. Generates a unique 8-character ID.
-  2. Generates a QR code containing structural attendee details (Name, Email, ID).
-  3. Generates a Code128 barcode matching the Registration Number.
-  4. Saves the images in `qrcodes/` and `barcodes/`.
-  5. Inserts and displays them directly inside [registrations.xlsx](file:///c:/Users/ashin/Downloads/qr_checkin_system_upgraded/qr_checkin_system/events/Default%20Event/registrations.xlsx) in their respective columns, adjusting row heights for perfect alignment.
+### Tab B: `👥 Guest Registry & Groups`
+The central database of all event attendees:
+* **Master Attendee Table**: Searchable, sortable list of all registered guests with registration numbers, email, phone, check-in status, and pass delivery status.
+* **Overseer Hub (Attendee Profile Editor)**: Click on any attendee to open their full profile. You can edit their name, phone, email, assign custom subgroups, upload/change profile photos, download their badge, or send an instant single pass via Email, WhatsApp, or SMS.
+* **👥 Custom Named Groups**: Multi-select attendees and group them into custom cohorts (e.g. "VIPs", "Keynote Speakers", "Sponsors", "Exhibitors"). You can assign dedicated badge themes, custom email templates, and broadcast batch passes specifically to that group.
+* **Export Options**: Export the full registry to Excel (with check-ins highlighted in yellow and embedded QR codes) or clean CSV at any time.
 
----
-
-## ✉️ Distributing Passes (Email & WhatsApp Campaigns)
-
-- Navigate to the **✉️ Bulk Email Invitations** panel.
-- Enter your sender email and SMTP App Password.
-- Subject lines and email bodies support dynamic placeholders:
-  * `{Name}`: Replaced with the guest's name.
-  * `{Registration Number}`: Replaced with the guest's registration number.
-  * `{Event}`: Replaced with the active event title.
-- Click **"Send Emails"** to run the campaign in the background. The system will attach the generated QR code image to each email and update the `Email Sent Status` column in the Excel file automatically.
-- Check-in confirmation templates andTwilio integrations for WhatsApp can be set up in the **⚙️ Event Configuration** panel.
+### Tab C: `🎨 ID Card & Communications Hub`
+Visual drag-and-drop badge and ID card designer:
+* **11 Curated Themes**: Choose from professional themes including *Cyber Neon, Midnight Executive, Clean Slate, Monolith Modern, Blueprint Industrial, Classic Royal, Nordic Minimal, Solar Flare, Stealth Tech, Ultra Minimalist,* and *Rose Gold Boutique*.
+* **Full Typography Controls**: Customize Font Family (Inter, Outfit, Roboto Mono, Georgia, Times, Courier, Segoe UI, Consolas, Playfair Display, Montserrat), Font Size, Bold, Italic, Letter Spacing (Tracking), Case Conversion (Uppercase, Lowercase, Capitalize), and Color for every text layer.
+* **Profile Photo Options**:
+  * `Show Photo`: Automatically loads attendee photos from Google Drive sharing links or direct image URLs.
+  * `Smart Initials Avatar`: Generates high-contrast geometric initial avatars for attendees without photos.
+  * `Hide Photo Container`: Hides the photo box for minimalist badge designs.
+* **Dual Preview Modes**:
+  * `Web Preview`: Ultra-fast live HTML/CSS rendering with real-time responsive updates as you tweak settings.
+  * `Final PIL Render`: Generates pixel-perfect rasterized output matching actual print badge files.
+* **Print-Ready Downloads**: Download single badges as high-resolution PNGs or vector PDFs, or export batch zip archives.
 
 ---
 
-## 📷 Checking In Attendees
+## 🛠️ 3. Operations Drawer (Left Panel Tabs)
 
-### 1. Local Webcam Scanning
-Organizers can scan QR codes using the host computer's webcam directly from the dashboard.
+Click **⚙️ Operations** in the top navigation bar to open the side drawer:
 
-### 2. Multi-Device Mobile Scanning
-To connect mobile devices to use their cameras as scanners:
-1. Ensure the public tunnel is running (if on cellular data) or the devices are on the same Wi-Fi (if using the LAN link).
-2. Go to the **🔒 Dashboard Sharing & Access** card on the dashboard.
-3. Open the **LAN URL** or **Public Tunnel URL** on the mobile device (or scan the **Dashboard Access QR Code**).
-4. Remote devices will be greeted with a glassmorphic login screen. Enter the **4-digit Passcode** shown on your main dashboard to authorize access.
-5. Once authorized, select **"Go to Scanner Client"** to open the camera scanner.
+### 1. `Add Guest`
+Register individual attendees on the fly:
+* Enter Name, Registration Number, Email, and Phone.
+* Add custom fields (e.g. Organization, Seat Number, Subgroup).
+* The system automatically generates a unique 8-character ID, QR code, Code128 barcode, and ID badge.
 
-### 3. Check-In Verification Modes
-* **Normal Mode (Default)**: After scanning a QR, the operator's screen displays a detailed overlay showing the guest's Name, Email, Reg Number, Phone, and any custom fields, with color-coded alerts (Green: Check-in OK, Orange: Duplicate checked-in, Red: Unregistered). Click **"Verify & Next Scan"** to proceed.
-* **⚡ Quick Scan Mode**: Toggle this on for high-throughput entry gates. The details page is bypassed. Scanning flashes a large status indicator directly on the camera view for 800ms (✅ for OK, ⚠️ for duplicate, ❌ for error) and automatically resumes.
+### 2. `Import Spreadsheet`
+Batch-import attendee lists from CSV or Excel (`.xlsx`) spreadsheets:
+* **Auto-Header Detection**: Automatically detects column names for Name, Email Address, Registration Number, Phone Number, and custom attributes.
+* **Duplicate Validation**: Identifies duplicate registration numbers inside the file and existing database duplicates.
+* **Destination Options**: Import into the *Current Active Event* or automatically *Create a New Event*.
+* **Reset & Overwrite**: Optional checkbox to clear the existing roster before importing.
+
+### 3. `Bulk Send` (Email, WhatsApp, SMS)
+Distribute personalized invitation passes with embedded QR codes:
+* **📧 Email Subtab**:
+  * Send automated HTML/text emails via Gmail SMTP or custom mail servers.
+  * Attach generated QR codes and printable ID card badges.
+  * Supports placeholders: `{Name}`, `{Registration Number}`, `{Event}`, `{Email Address}`, `{Phone Number}`, `{Unique ID}`.
+* **💬 WhatsApp Subtab**:
+  * Send WhatsApp messages via Twilio, Meta Cloud API, or 1-click WhatsApp Web links (`wa.me`) with individualized attendee details.
+* **📱 SMS Subtab**:
+  * Send personalized SMS text passes using a connected local Android SMS Gateway phone or Twilio SMS.
+
+### 4. `Settings & Templates`
+Event-level configuration:
+* **Event Name Template**: Global event title shown across all passes and ID badges.
+* **Check-In Time Restrictions**: Set strict start and end dates/times for valid scanning (manager manual check-ins and quarantine approvals bypass restrictions automatically).
+* **Notification Templates**: Customize default Email subjects, Email bodies, and SMS messages.
+* **Sound Alerts**: Choose audio themes (Modern Chime, Cyber Beep, Subtle Click, High Contrast) for scanner feedback.
+
+### 5. `Clean & QR Tools`
+Maintenance and security diagnostics:
+* **Regenerate QR / Barcode Assets**: Re-creates any missing or updated QR code, barcode, and ID card image files for the active event.
+* **Clean Database Duplicates**: Scans the Excel database for duplicate registration numbers and deduplicates rows safely.
+* **Security Audit Log**: Review the timestamped audit log of all managerial actions (event switches, manual check-ins, revocations, and data modifications).
+
+### 6. `Quarantine`
+Security filter for unregistered or anomalous scans:
+* When a visitor scans an unregistered QR code, malformed code, or duplicate, the scan is safely logged in the Quarantine Queue.
+* Event managers can review quarantined scans and click **Approve** for **1-Click Self-Healing Registration**—the guest is immediately registered into the roster, given QR/barcodes/ID card, and checked in.
 
 ---
 
-## 📊 Monitoring & Reports
+## 📡 4. Remote Scanners, Network & Internet Tunnels
 
-* **Live Device Monitor**: Tracks all connected scanner devices in real-time. Displays device name (can be renamed from the dashboard), connection status (online/offline), total scans performed, and their last scanned attendee.
-* **Scan History Log**: View a unified table of all checked-in attendees, with filtering options (filter by scanning operator device, duplicate status, and scan time frame).
-* **Data Synced Excel**: At any time, click **"Download Highlighted Excel"** to export the registrations sheet. Checked-in rows are highlighted in yellow, complete with scan timestamps and scanner device names.
+* **Local LAN Scanning**: Any phone or tablet on the same Wi-Fi network can open the LAN URL (e.g. `http://192.168.1.15:5001`) to scan attendees.
+* **📡 Public Internet Tunnel**: If scanning staff are on mobile data (4G/5G) or outside the venue Wi-Fi:
+  * Click **"Start Public Tunnel"** in the operations drawer (or run `start_public_tunnel.bat`).
+  * The system generates a public HTTPS link (e.g. `https://your-event.lhrtunnel.link`) with automatic reconnection keepalives.
+* **🔒 Passcode-Protected Dashboard Sharing**:
+  * Protect the dashboard with a 4-digit PIN passcode so only authorized staff can manage the event.
+  * Share dedicated scanner links directly to volunteer phones without giving access to settings.
 
 ---
 
-## 🔒 Sharing & Permissions
-In the **🔒 Dashboard Sharing & Access** card, you can restrict remote users:
-* **Passcode Protected**: Only users with the active passcode can view the dashboard and logs.
-* **Public Access**: Anyone with the link can view the dashboard (convenient for sharing monitors on big screens).
-* **Disabled**: Remote access is shut down; the dashboard can only be accessed from the host machine.
+## 📷 5. Scanner Features & Verification Modes
+
+1. **Normal Verification Mode**: Displays full attendee details (Name, Reg No, Email, Level, Photo) on scan with color-coded status badges (Green = Success, Orange = Duplicate, Red = Unregistered). Operator taps **"Verify & Next Scan"** to proceed.
+2. **⚡ Quick Scan Mode**: Designed for high-throughput gates. Bypasses the details popup, flashes a quick green checkmark on the camera view, beeps, and is ready for the next attendee in 800 milliseconds.
+3. **Sound & Haptic Feedback**: Plays audio confirmation chimes and triggers device vibration on mobile scanners for fast eyes-free operation.
+4. **Offline Resilience**: If Wi-Fi briefly drops, scans are queued locally on the mobile device and automatically synced once the connection resumes.
+
+---
+
+## ❓ 6. Common Questions & Troubleshooting
+
+* **Q: How do I undo an accidental check-in?**
+  * *A*: Go to the **Guest Registry** tab, find the attendee, and click the red **Revoke** button (or click Revoke in the Live Scan Log).
+* **Q: How do I use attendee photos from Google Forms or Google Drive?**
+  * *A*: In your Excel/CSV roster, paste the Google Drive sharing link or public image URL into the `Profile Photo` or `Photo` column. The system will automatically fetch, thumbnail, and embed the photo onto the attendee's ID card.
+* **Q: Can different ticket tiers (VIP vs General) have different badges?**
+  * *A*: Yes! Create custom groups under **Guest Registry -> Custom Groups** or define subgroup templates under **Settings & Templates -> Subgroup Rules**.

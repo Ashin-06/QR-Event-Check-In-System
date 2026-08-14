@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          colors: {
+            "primary": "#8b5cf6", // Vibrant Violet
+            "primary-container": "#2e1065", // Deep Purple
+            "secondary": "#06b6d4", // Cyan Accent
+            "secondary-container": "#083344", // Deep Cyan
+            "background": "#090514", // Very Dark Violet
+            "surface": "#120a2b", // Dark Violet Card Base
+            "on-surface": "#f3e8ff",
+            "on-primary-container": "#c084fc",
+            "on-secondary-container": "#22d3ee",
+            "outline-variant": "rgba(139, 92, 246, 0.2)"
+          },
+          fontFamily: {
+            "id-name": ["Hanken Grotesk", "sans-serif"],
+            "id-role": ["Inter", "sans-serif"]
+          }
+        }
+      }
+    };
+  </script>
+  <style>
+    body {
+      background-color: #090514;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      margin: 0;
+    }
+    .cr80-card {
+      width: 337.5px;
+      height: 531px;
+      background: #120a2b;
+      position: relative;
+      overflow: hidden;
+      border: 1px solid rgba(139, 92, 246, 0.3);
+    }
+    .aurora-blur {
+      position: absolute;
+      width: 300px;
+      height: 300px;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(139,92,246,0.3) 0%, rgba(6,182,212,0.15) 50%, transparent 100%);
+      filter: blur(40px);
+      z-index: 1;
+      pointer-events: none;
+    }
+    .top-glow { top: -150px; right: -100px; }
+    .bottom-glow { bottom: -150px; left: -100px; }
+  </style>
+</head>
+<body class="bg-background font-id-role">
+  <div class="cr80-card rounded-[24px] shadow-2xl flex flex-col p-6 text-on-surface relative">
+    <!-- Aurora background blurs -->
+    <div class="aurora-blur top-glow"></div>
+    <div class="aurora-blur bottom-glow"></div>
+    
+    <!-- Header -->
+    <div class="flex justify-between items-center z-10 mb-6">
+      <div class="flex flex-col">
+        <span class="text-secondary font-bold tracking-[0.25em] text-[10px] uppercase">AURORA QUANTUM</span>
+        <span class="text-on-surface/50 text-[8px] tracking-wider uppercase">SUMMIT 2026</span>
+      </div>
+      <div class="w-9 h-9 rounded-xl bg-primary/20 border border-primary/30 flex items-center justify-center">
+        <span class="material-symbols-outlined text-primary text-xl" data-icon="blur_on">blur_on</span>
+      </div>
+    </div>
+    
+    <!-- Photo Section -->
+    <div class="flex justify-center z-10 mb-6">
+      <div class="relative p-1 rounded-2xl bg-gradient-to-tr from-primary to-secondary">
+        <div class="w-24 h-24 rounded-xl overflow-hidden bg-background">
+          <img class="w-full h-full object-cover" src="{PHOTO_URL}" alt="Profile Photo">
+        </div>
+      </div>
+    </div>
+    
+    <!-- Name / Role -->
+    <div class="text-center z-10 mb-6">
+      <h2 class="font-id-name text-[20px] font-extrabold tracking-tight text-white leading-none mb-1">{Name}</h2>
+      <span class="text-secondary text-[12px] uppercase font-bold tracking-widest">{Pass Type}</span>
+    </div>
+    
+    <!-- Bento Data Grid -->
+    <div class="grid grid-cols-2 gap-2 z-10 mb-6">
+      <div class="p-2.5 rounded-xl bg-primary-container/20 border border-outline-variant flex flex-col">
+        <span class="text-on-surface/40 text-[8px] uppercase tracking-wider font-semibold mb-0.5">SERIAL NUMBER</span>
+        <span class="text-[11px] font-mono text-on-primary-container font-bold">{Registration Number}</span>
+      </div>
+      <div class="p-2.5 rounded-xl bg-primary-container/20 border border-outline-variant flex flex-col">
+        <span class="text-on-surface/40 text-[8px] uppercase tracking-wider font-semibold mb-0.5">SECTOR ACCESS</span>
+        <span class="text-[11px] text-on-primary-container font-bold">SEC-ALPHA</span>
+      </div>
+      <div class="p-2.5 rounded-xl bg-primary-container/20 border border-outline-variant flex flex-col col-span-2">
+        <span class="text-on-surface/40 text-[8px] uppercase tracking-wider font-semibold mb-0.5">VERIFICATION TOKEN</span>
+        <span class="text-[11px] text-secondary font-mono truncate font-bold">{Unique ID}</span>
+      </div>
+    </div>
+    
+    <!-- Footer / QR Code -->
+    <div class="mt-auto pt-4 border-t border-outline-variant flex justify-between items-end z-10">
+      <div class="flex flex-col">
+        <span class="text-on-surface/30 text-[7px] tracking-wider uppercase">SYSTEM SECURITY</span>
+        <span class="text-on-surface/60 text-[9px] font-mono mt-0.5">VERIFIED CREW</span>
+      </div>
+      <div class="p-1.5 bg-white rounded-xl shadow-lg border border-outline-variant">
+        <img class="w-12 h-12 object-contain" src="{QR_CODE_URL}" alt="Security QR">
+      </div>
+    </div>
+  </div>
+</body>
+</html>

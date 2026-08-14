@@ -243,6 +243,8 @@ RATE_LIMIT_SECONDS = 2          # minimum seconds between scans from same IP
 
 
 def _is_rate_limited(ip: str, device_id: str = "unknown") -> bool:
+    if app.config.get("TESTING"):
+        return False
     key = f"{ip}:{device_id}"
     now = time.time()
     if now - _rate_store[key] < RATE_LIMIT_SECONDS:
@@ -823,26 +825,8 @@ def _validate_attendee_integrity(row_dict: dict, existing_regs: set[str] = None)
             digits = re.sub(r"\D", "", norm)
             if all(d == "0" for d in digits):
                 errors["phone"] = "Phone number cannot be all zeros."
-            else:
-                cc_found = None
-                sub_len = len(digits)
-                for cc in ["971", "972", "966", "974", "973", "968", "962", "961", "964", "965", "880", "855", "856", "853", "852", "354", "353", "358", "370", "371", "372", "373", "375", "376", "377"]:
-                    if digits.startswith(cc):
-                        cc_found = cc
-                        sub_len = len(digits) - len(cc)
-                        break
-                if not cc_found:
-                    for cc in ["91", "44", "61", "49", "33", "34", "39", "81", "82", "86", "55", "52", "27", "20", "60", "62", "63", "65", "66", "92", "94", "95", "98", "90", "48", "31", "32", "41", "43", "46", "47", "45", "30", "36", "40", "38"]:
-                        if digits.startswith(cc):
-                            cc_found = cc
-                            sub_len = len(digits) - len(cc)
-                            break
-                if not cc_found and digits.startswith("1"):
-                    cc_found = "1"
-                    sub_len = len(digits) - 1
-                    
-                if cc_found and sub_len < 10:
-                    errors["phone"] = "Phone number must have at least 10 digits after the country code."
+            elif len(digits) < 7 or len(digits) > 15:
+                errors["phone"] = "Phone number must be between 7 and 15 digits in E.164 format."
                 
     return errors
 
@@ -1080,6 +1064,9 @@ def _get_qr_to_attendee_map() -> dict[str, dict]:
     if not os.path.exists(excel_file):
         return mapping
     try:
+        cfg = get_event_config()
+        group_col = cfg.get("group_column", "").strip().lower()
+        
         with lock:
             wb = load_workbook(excel_file, read_only=True)
             ws = wb.active
@@ -1087,14 +1074,38 @@ def _get_qr_to_attendee_map() -> dict[str, dict]:
             name_idx = hdrs.get("name")
             reg_idx = hdrs.get("registration number")
             qr_idx = hdrs.get("qr")
+            email_idx = hdrs.get("email address")
+            phone_idx = hdrs.get("phone number")
+            scan_idx = hdrs.get(SCAN_COL_NAME.lower())
+            
+            group_idx = None
+            if group_col:
+                group_idx = hdrs.get(group_col)
+            if not group_idx:
+                for k in ["subgroup", "group", "ticket type", "category", "pass type"]:
+                    if k in hdrs:
+                        group_idx = hdrs[k]
+                        break
+            
             if name_idx and reg_idx and qr_idx:
+                idxs = [name_idx, reg_idx, qr_idx]
+                if email_idx: idxs.append(email_idx)
+                if phone_idx: idxs.append(phone_idx)
+                if scan_idx: idxs.append(scan_idx)
+                if group_idx: idxs.append(group_idx)
+                max_idx = max(idxs)
+                
                 for row in ws.iter_rows(min_row=2, values_only=True):
-                    if len(row) >= max(name_idx, reg_idx, qr_idx):
+                    if len(row) >= max_idx:
                         qr_val = str(row[qr_idx - 1] or "").strip()
                         if qr_val:
                             mapping[qr_val] = {
                                 "name": str(row[name_idx - 1] or "").strip(),
-                                "reg_no": str(row[reg_idx - 1] or "").strip()
+                                "reg_no": str(row[reg_idx - 1] or "").strip(),
+                                "email": str(row[email_idx - 1] or "").strip() if email_idx else "",
+                                "phone": str(row[phone_idx - 1] or "").strip() if phone_idx else "",
+                                "subgroup": str(row[group_idx - 1] or "").strip() if group_idx else "Unassigned",
+                                "status": str(row[scan_idx - 1] or "").strip() if scan_idx else "Not Scanned"
                             }
             wb.close()
     except Exception as e:
@@ -1131,15 +1142,30 @@ def data_csv():
             if name_match:
                 att = {
                     "name": name_match.group(1).strip(),
-                    "reg_no": reg_match.group(2).strip() if reg_match else "Unknown"
+                    "reg_no": reg_match.group(2).strip() if reg_match else "Unknown",
+                    "email": "",
+                    "phone": "",
+                    "subgroup": "Unassigned",
+                    "status": "Not Scanned"
                 }
             else:
-                att = {"name": qr_val, "reg_no": "Unknown"}
+                att = {
+                    "name": qr_val,
+                    "reg_no": "Unknown",
+                    "email": "",
+                    "phone": "",
+                    "subgroup": "Unassigned",
+                    "status": "Not Scanned"
+                }
                 
         records.append({
             "QR Data": qr_val,
-            "attendee_name": att["name"],
-            "reg_no": att["reg_no"],
+            "attendee_name": att.get("name", qr_val),
+            "reg_no": att.get("reg_no", "Unknown"),
+            "email": att.get("email", ""),
+            "phone": att.get("phone", ""),
+            "subgroup": att.get("subgroup", "Unassigned"),
+            "status": att.get("status", "Not Scanned"),
             "Scan Count": int(row["Scan Count"]),
             "Last Timestamp": row["Last Timestamp"],
             "Timestamps": row["Timestamps"],
@@ -1161,7 +1187,8 @@ def stats():
 
 @app.route("/stats/timeline")
 def stats_timeline():
-    """Hourly check-in timeline stats."""
+    """Check-in timeline stats grouped by configurable interval."""
+    interval = request.args.get("interval", "1h").strip().lower()
     with lock:
         all_timestamps = []
         for ts_str in scanned_log["Timestamps"].dropna():
@@ -1170,17 +1197,48 @@ def stats_timeline():
                 if part:
                     all_timestamps.append(part)
                     
-        hourly_counts = defaultdict(int)
+        counts = defaultdict(int)
         for ts in all_timestamps:
             try:
                 dt = datetime.strptime(ts, "%Y-%m-%d %H:%M:%S")
-                hour_str = f"Hour {dt.strftime('%H:00')}"
-                hourly_counts[hour_str] += 1
-            except Exception:
+                if interval == "5m":
+                    minute = (dt.minute // 5) * 5
+                    key = dt.replace(minute=minute, second=0, microsecond=0)
+                    label = key.strftime("%H:%M")
+                elif interval == "10m":
+                    minute = (dt.minute // 10) * 10
+                    key = dt.replace(minute=minute, second=0, microsecond=0)
+                    label = key.strftime("%H:%M")
+                elif interval == "30m":
+                    minute = (dt.minute // 30) * 30
+                    key = dt.replace(minute=minute, second=0, microsecond=0)
+                    label = key.strftime("%H:%M")
+                elif interval == "2h":
+                    hour = (dt.hour // 2) * 2
+                    key = dt.replace(hour=hour, minute=0, second=0, microsecond=0)
+                    label = key.strftime("%H:%M")
+                elif interval == "4h":
+                    hour = (dt.hour // 4) * 4
+                    key = dt.replace(hour=hour, minute=0, second=0, microsecond=0)
+                    label = key.strftime("%H:%M")
+                elif interval == "6h":
+                    hour = (dt.hour // 6) * 6
+                    key = dt.replace(hour=hour, minute=0, second=0, microsecond=0)
+                    label = key.strftime("%H:%M")
+                elif interval == "1d":
+                    key = dt.date()
+                    label = key.strftime("%Y-%m-%d")
+                else: # Default: 1h
+                    key = dt.replace(minute=0, second=0, microsecond=0)
+                    label = key.strftime("%H:%M")
+                
+                counts[(key, label)] += 1
+            except Exception as e:
+                print(f"[stats_timeline] parsing error for {ts}: {e}")
                 pass
                 
-        sorted_hours = sorted(hourly_counts.keys())
-        timeline = [{"hour": h, "count": hourly_counts[h]} for h in sorted_hours]
+        sorted_keys = sorted(counts.keys(), key=lambda x: x[0])
+        timeline = [{"hour": label, "label": label, "count": counts[(key, label)]} for key, label in sorted_keys]
         
     return jsonify(timeline=timeline)
 
@@ -1322,7 +1380,7 @@ def _log_to_excel_sheet(wb, now_str, name, reg_no, device, status, qr_val):
         print(f"[Scan Log] Error appending to sheet: {e}")
 
 
-def _perform_checkin(qr_data: str, device_id: str = "unknown") -> tuple[dict, int]:
+def _perform_checkin(qr_data: str, device_id: str = "unknown", force_bypass: bool = False) -> tuple[dict, int]:
     """Helper to perform check-in operations. Returns (response_dict, status_code)."""
     # Normalize incoming QR data string
     qr_data_norm = qr_data.replace("\r\n", "\n").strip()
@@ -1456,37 +1514,38 @@ def _perform_checkin(qr_data: str, device_id: str = "unknown") -> tuple[dict, in
             now_dt = datetime.now()
             
             # Start restriction check
-            if start_d:
-                start_dt_str = f"{start_d} {start_t if start_t else '00:00'}"
-                try:
-                    start_dt = datetime.strptime(start_dt_str, "%Y-%m-%d %H:%M")
-                    if now_dt < start_dt:
-                        is_time_restricted = True
-                        time_error_msg = f"❌ Check-In Not Started (Allowed: after {start_dt_str})"
-                except ValueError:
-                    pass
-            elif start_t:
-                now_time_str = now_dt.strftime("%H:%M")
-                if now_time_str < start_t:
-                    is_time_restricted = True
-                    time_error_msg = f"❌ Check-In Not Started (Allowed: after {start_t})"
-                    
-            # End restriction check
-            if not is_time_restricted:
-                if end_d:
-                    end_dt_str = f"{end_d} {end_t if end_t else '23:59'}"
+            if not force_bypass:
+                if start_d:
+                    start_dt_str = f"{start_d} {start_t if start_t else '00:00'}"
                     try:
-                        end_dt = datetime.strptime(end_dt_str, "%Y-%m-%d %H:%M")
-                        if now_dt > end_dt:
+                        start_dt = datetime.strptime(start_dt_str, "%Y-%m-%d %H:%M")
+                        if now_dt < start_dt:
                             is_time_restricted = True
-                            time_error_msg = f"❌ Check-In Closed (Allowed: before {end_dt_str})"
+                            time_error_msg = f"❌ Check-In Not Started (Allowed: after {start_dt_str})"
                     except ValueError:
                         pass
-                elif end_t:
+                elif start_t:
                     now_time_str = now_dt.strftime("%H:%M")
-                    if now_time_str > end_t:
+                    if now_time_str < start_t:
                         is_time_restricted = True
-                        time_error_msg = f"❌ Check-In Closed (Allowed: before {end_t})"
+                        time_error_msg = f"❌ Check-In Not Started (Allowed: after {start_t})"
+                        
+                # End restriction check
+                if not is_time_restricted:
+                    if end_d:
+                        end_dt_str = f"{end_d} {end_t if end_t else '23:59'}"
+                        try:
+                            end_dt = datetime.strptime(end_dt_str, "%Y-%m-%d %H:%M")
+                            if now_dt > end_dt:
+                                is_time_restricted = True
+                                time_error_msg = f"❌ Check-In Closed (Allowed: before {end_dt_str})"
+                        except ValueError:
+                            pass
+                    elif end_t:
+                        now_time_str = now_dt.strftime("%H:%M")
+                        if now_time_str > end_t:
+                            is_time_restricted = True
+                            time_error_msg = f"❌ Check-In Closed (Allowed: before {end_t})"
                 
             if is_time_restricted:
                 # Still log the scan timestamps and devices in Excel main row under special status
@@ -1761,7 +1820,7 @@ def manual_checkin():
                 res, code = _processed_idempotency_keys[idempotency_key]
                 return jsonify(res), code
 
-    res, code = _perform_checkin(qr_data, device_id="Manual Check-In")
+    res, code = _perform_checkin(qr_data, device_id="Manual Check-In", force_bypass=True)
 
     # Save to Idempotency Cache
     if idempotency_key and code == 200:
@@ -1819,11 +1878,115 @@ def approve_quarantine():
     if not qr_data:
         return jsonify(message="Invalid quarantine entry (missing QR data)."), 400
 
-    # Perform the actual check-in
-    res, code = _perform_checkin(qr_data, device_id=f"Approved:{device_name}")
-    if code not in (200, 200):
-        # Still mark as approved even if duplicate
-        pass
+    # Perform the check-in with force_bypass=True
+    res, code = _perform_checkin(qr_data, device_id=f"Approved:{device_name}", force_bypass=True)
+    
+    # Self-healing registration for unregistered QR codes approved manually
+    if code == 400 and res.get("error") == "unregistered_attendee":
+        excel_file = get_excel_file()
+        wb = None
+        try:
+            with lock:
+                wb = load_workbook(excel_file)
+                ws = wb.active
+                hdrs, _ = _get_or_create_headers(ws)
+                
+                # Check existing regs & uids
+                existing_regs = set()
+                existing_uids = set()
+                for r in range(2, ws.max_row + 1):
+                    cell_val = ws.cell(row=r, column=hdrs["registration number"]).value
+                    if cell_val:
+                        existing_regs.add(str(cell_val).strip().lower())
+                    cell_uid = ws.cell(row=r, column=hdrs["unique id"]).value
+                    if cell_uid:
+                        existing_uids.add(str(cell_uid).strip().upper())
+                
+                # Parse Name and Reg No
+                name = f"Quarantine Guest ({qr_data})"
+                reg_no = qr_data
+                if "|" in qr_data:
+                    parts = qr_data.split("|")
+                    if len(parts) >= 2:
+                        p0 = parts[0].strip()
+                        p1 = parts[1].strip()
+                        if any(c.isdigit() for c in p1) and not any(c.isdigit() for c in p0):
+                            name = p0
+                            reg_no = p1
+                        elif any(c.isdigit() for c in p0) and not any(c.isdigit() for c in p1):
+                            name = p1
+                            reg_no = p0
+                        else:
+                            name = p0
+                            reg_no = p1
+                
+                # Ensure unique reg_no
+                base_reg = reg_no
+                counter = 1
+                while reg_no.lower() in existing_regs:
+                    reg_no = f"{base_reg}-{counter}"
+                    counter += 1
+                
+                uid = _generate_unique_id(existing_uids)
+                cfg = get_event_config()
+                qr_str = qr_data
+                
+                qr_path = _generate_qr_for_guest(qr_str, reg_no)
+                barcode_path = _generate_barcode_for_guest(reg_no)
+                
+                new_r = ws.max_row + 1
+                ws.cell(row=new_r, column=hdrs["name"], value=name)
+                ws.cell(row=new_r, column=hdrs["registration number"], value=reg_no)
+                ws.cell(row=new_r, column=hdrs["unique id"], value=uid)
+                ws.cell(row=new_r, column=hdrs["qr"], value=qr_str)
+                ws.cell(row=new_r, column=hdrs["barcode"], value=reg_no)
+                ws.cell(row=new_r, column=hdrs[SCAN_COL_NAME.lower()], value="")
+                
+                if "email address" in hdrs:
+                    ws.cell(row=new_r, column=hdrs["email address"], value="")
+                if "phone number" in hdrs:
+                    ws.cell(row=new_r, column=hdrs["phone number"], value="")
+                if "email sent status" in hdrs:
+                    ws.cell(row=new_r, column=hdrs["email sent status"], value="Not Sent")
+                if "whatsapp sent status" in hdrs:
+                    ws.cell(row=new_r, column=hdrs["whatsapp sent status"], value="Not Sent")
+                if "sms sent status" in hdrs:
+                    ws.cell(row=new_r, column=hdrs["sms sent status"], value="Not Sent")
+                
+                _embed_qr_image(ws, new_r, qr_path, hdrs["qr code image"])
+                _embed_barcode_image(ws, new_r, barcode_path, hdrs["barcode image"])
+                
+                # Generate ID Card
+                if cfg.get("enable_id_card_generation"):
+                    try:
+                        _generate_id_card(
+                            name=name,
+                            reg_no=reg_no,
+                            phone="",
+                            email="",
+                            uid=uid,
+                            qr_path=qr_path,
+                            event_name=cfg.get("event_name_template", "the Event"),
+                            level=""
+                        )
+                    except Exception as e:
+                        print(f"Error generating ID card on quarantine approve: {e}")
+                
+                _atomic_save(wb, excel_file)
+                wb = None
+                
+                socketio.emit("registry_updated", {})
+                
+            # Perform check-in again now that registration exists!
+            res, code = _perform_checkin(qr_data, device_id=f"Approved:{device_name}", force_bypass=True)
+            
+        except Exception as e:
+            print(f"[quarantine] Error auto-registering guest: {e}")
+            if wb:
+                try:
+                    wb.close()
+                except Exception:
+                    pass
 
     # Mark item as approved and save
     target["status"] = "approved"
@@ -1921,7 +2084,7 @@ def revoke_checkin():
     if not request.is_json:
         return jsonify(message="Request must be JSON."), 415
     payload = request.json or {}
-    reg_no = payload.get("reg_no", "").strip()
+    reg_no = payload.get("reg_no", "").strip() or payload.get("qr_data", "").strip()
     reason = payload.get("reason", "Admin Undo").strip() or "Admin Undo"
 
     if not reg_no:
@@ -2126,7 +2289,9 @@ def save_group():
         return jsonify(message="Request must be JSON."), 415
     payload = request.json or {}
     group_name = payload.get("name", "").strip()
-    reg_nos = payload.get("reg_nos", [])
+    reg_nos = payload.get("reg_nos")
+    if reg_nos is None:
+        reg_nos = payload.get("members", [])
     description = payload.get("description", "").strip()
     id_card_theme = payload.get("id_card_theme", "").strip()
 
@@ -3160,7 +3325,152 @@ def _get_attendee_level(row_dict: dict) -> str:
     return ""
 
 
-def _generate_id_card(name: str, reg_no: str, phone: str, email: str, uid: str, qr_path: str, event_name: str, level: str = "", cfg: dict = None) -> tuple[str, str]:
+def _resolve_profile_photo(reg_no, photo_url_or_path) -> str:
+    """
+    Given a reg_no and a photo URL or local path, download and cache it locally if it is a Google Drive/web link.
+    Returns the local absolute path of the cached image, or fallback placeholder.
+    """
+    photo_url_or_path = str(photo_url_or_path or "").strip()
+    
+    # Fallback: if no link/path is passed, check if a cached file exists anyway
+    cache_dir = os.path.join(get_qr_dir(), "profile_photos")
+    if not photo_url_or_path:
+        local_photo_path = os.path.join(cache_dir, f"photo_{reg_no}.png")
+        if os.path.exists(local_photo_path):
+            return local_photo_path
+        return ""
+        
+    if os.path.exists(photo_url_or_path):
+        return photo_url_or_path
+        
+    os.makedirs(cache_dir, exist_ok=True)
+    cached_path = os.path.join(cache_dir, f"photo_{reg_no}.png")
+    
+    if os.path.exists(cached_path):
+        return cached_path
+        
+    # Convert Google Drive link to direct download link
+    download_url = photo_url_or_path
+    if "drive.google.com" in photo_url_or_path:
+        file_id = ""
+        if "id=" in photo_url_or_path:
+            parts = photo_url_or_path.split("id=")
+            if len(parts) > 1:
+                file_id = parts[1].split("&")[0]
+        elif "/file/d/" in photo_url_or_path:
+            parts = photo_url_or_path.split("/file/d/")
+            if len(parts) > 1:
+                file_id = parts[1].split("/")[0]
+                
+        if file_id:
+            download_url = f"https://drive.google.com/uc?export=download&id={file_id}"
+            
+    if download_url.startswith("http://") or download_url.startswith("https://"):
+        try:
+            import requests
+            print(f"[Profile Photo] Downloading {download_url} to {cached_path}...")
+            r = requests.get(download_url, timeout=15)
+            if r.status_code == 200:
+                with open(cached_path, "wb") as f:
+                    f.write(r.content)
+                return cached_path
+        except Exception as e:
+            print(f"[Profile Photo] Failed to download {download_url}: {e}")
+            
+    return ""
+
+
+def _generate_initials_image(name: str) -> str:
+    """
+    Generates a 200x200 PNG image of initials with a colored background.
+    Returns the base64-encoded data URI.
+    """
+    from PIL import Image, ImageDraw, ImageFont
+    import base64
+    import io
+    import hashlib
+    
+    # 1. Get Initials
+    name_parts = str(name or "Guest").strip().split()
+    initials = ""
+    if len(name_parts) >= 2:
+        initials = name_parts[0][0].upper() + name_parts[-1][0].upper()
+    elif len(name_parts) == 1:
+        initials = name_parts[0][:2].upper()
+    else:
+        initials = "G"
+        
+    # 2. Pick a background color based on name hash (for variation)
+    colors = [
+        (46, 204, 113),  # emerald
+        (52, 152, 219),  # peter river
+        (155, 89, 182),  # amethyst
+        (230, 126, 34),  # carrot
+        (231, 76, 60),   # alizarin
+        (26, 188, 156),  # turquoise
+        (241, 196, 15),  # sunflower
+        (142, 68, 173),  # wisteria
+        (211, 84, 0),    # pumpkin
+        (192, 57, 43),   # pomegranate
+    ]
+    h_val = int(hashlib.md5(name.encode("utf-8")).hexdigest(), 16)
+    color_idx = h_val % len(colors)
+    bg_color = colors[color_idx]
+    
+    # 3. Draw image
+    img = Image.new("RGBA", (200, 200), (255, 255, 255, 0))
+    draw = ImageDraw.Draw(img)
+    
+    # Draw background circle
+    draw.ellipse([0, 0, 200, 200], fill=bg_color)
+    
+    # Try to load Arial font
+    font = None
+    import os
+    font_paths = [
+        "C:\\Windows\\Fonts\\arialbd.ttf",
+        "C:\\Windows\\Fonts\\arial.ttf",
+        "arialbd.ttf",
+        "arial.ttf"
+    ]
+    for fp in font_paths:
+        if os.path.exists(fp):
+            try:
+                font = ImageFont.truetype(fp, 80)
+                break
+            except Exception:
+                pass
+                
+    if not font:
+        try:
+            font = ImageFont.load_default()
+        except Exception:
+            pass
+            
+    # Draw centered text
+    if font:
+        try:
+            bbox = draw.textbbox((0, 0), initials, font=font)
+            text_w = bbox[2] - bbox[0]
+            text_h = bbox[3] - bbox[1]
+        except AttributeError:
+            try:
+                text_w, text_h = draw.textsize(initials, font=font)
+            except Exception:
+                text_w, text_h = 80, 80
+        x = (200 - text_w) / 2
+        y = (200 - text_h) / 2 - 10
+        draw.text((x, y), initials, fill=(255, 255, 255, 255), font=font)
+    else:
+        draw.text((80, 80), initials, fill=(255, 255, 255, 255))
+        
+    buffered = io.BytesIO()
+    img.save(buffered, format="PNG")
+    img_str = base64.b64encode(buffered.getvalue()).decode("utf-8")
+    return f"data:image/png;base64,{img_str}"
+
+
+def _generate_id_card(name: str, reg_no: str, phone: str, email: str, uid: str, qr_path: str, event_name: str, level: str = "", cfg: dict = None, profile_photo: str = "", theme: str = "") -> tuple[str, str]:
     """
     Generates a beautifully styled vertical ID card (600x900 pixels) with a dark gradient,
     abstract design accents, event info, attendee details, and the embedded QR code.
@@ -3534,8 +3844,47 @@ def _generate_id_card(name: str, reg_no: str, phone: str, email: str, uid: str, 
                 else:
                     resolved_html = resolved_html.replace("{QR_CODE_URL}", "")
                 
-                # Use a high-quality professional portrait placeholder for PHOTO_URL
-                resolved_html = resolved_html.replace("{PHOTO_URL}", "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=200")
+                # Resolve Profile Photo based on configuration option
+                id_card_photo_option = cfg.get("id_card_photo_option", "image_needed") if cfg else "image_needed"
+                photo_base64 = ""
+                
+                if id_card_photo_option == "hide_photo":
+                    # Transparent 1x1 pixel to hide the photo container
+                    resolved_html = resolved_html.replace("{PHOTO_URL}", "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==")
+                elif id_card_photo_option == "always_initials":
+                    initials_base64 = _generate_initials_image(name)
+                    resolved_html = resolved_html.replace("{PHOTO_URL}", initials_base64)
+                else: # image_needed
+                    local_photo_path = _resolve_profile_photo(reg_no, profile_photo)
+                    if local_photo_path and os.path.exists(local_photo_path):
+                        import base64
+                        try:
+                            with open(local_photo_path, "rb") as f_p:
+                                photo_base64 = base64.b64encode(f_p.read()).decode("utf-8")
+                        except Exception:
+                            pass
+                    
+                    if photo_base64:
+                        resolved_html = resolved_html.replace("{PHOTO_URL}", f"data:image/png;base64,{photo_base64}")
+                    else:
+                        # Fallback to initials if image not selected/uploaded
+                        initials_base64 = _generate_initials_image(name)
+                        resolved_html = resolved_html.replace("{PHOTO_URL}", initials_base64)
+                    
+                # Resolve Global Logo
+                logo_path = os.path.join(BASE_DIR, "static", "uploads", "logo.png")
+                logo_base64 = ""
+                if os.path.exists(logo_path):
+                    import base64
+                    try:
+                        with open(logo_path, "rb") as f_l:
+                            logo_base64 = base64.b64encode(f_l.read()).decode("utf-8")
+                    except Exception:
+                        pass
+                if logo_base64:
+                    resolved_html = resolved_html.replace("{LOGO_URL}", f"data:image/png;base64,{logo_base64}")
+                else:
+                    resolved_html = resolved_html.replace("{LOGO_URL}", "")
                 
                 # Strip body layout styles (min-height, height, display, justify-content, align-items, margin)
                 import re
@@ -3550,15 +3899,21 @@ def _generate_id_card(name: str, reg_no: str, phone: str, email: str, uid: str, 
                     return f"body {{{body_rules}}}"
                 cleaned_css = re.sub(r'body\s*{(.*?)}', _strip_body, cleaned_css, flags=re.DOTALL | re.I)
                 
-                # Build complete HTML page
+                import json
+                fields_json = json.dumps(designer_settings.get("fields", []))
+                body_class = designer_settings.get("body_class", "")
+                tailwind_config = designer_settings.get("tailwind_config", "")
+                tailwind_script = f"<script>tailwind.config = {tailwind_config};</script>" if tailwind_config else ""
+                
                 full_document = f"""
                 <!DOCTYPE html>
                 <html>
                 <head>
                     <meta charset="utf-8">
                     <script src="https://cdn.tailwindcss.com"></script>
+                    {tailwind_script}
                     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" />
-                    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700;800&family=Outfit:wght@300;400;600;700;800&family=Roboto+Mono:wght@400;700&display=swap" />
+                    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700;800&family=Outfit:wght@300;400;600;700;800&family=Roboto+Mono:wght@400;700&family=Playfair+Display:ital,wght@0,400..900;1,400..900&family=Montserrat:ital,wght@0,100..900;1,100..900&display=swap" />
                     <style>
                         body {{
                             margin: 0;
@@ -3574,8 +3929,82 @@ def _generate_id_card(name: str, reg_no: str, phone: str, email: str, uid: str, 
                         {cleaned_css}
                     </style>
                 </head>
-                <body>
+                <body class="{body_class}">
                     {resolved_html}
+                    
+                    <script>
+                        window.addEventListener('DOMContentLoaded', () => {{
+                            const card = document.body.firstElementChild;
+                            if (card) {{
+                                card.style.transition = 'none';
+                                card.style.margin = '0';
+                                card.style.transform = 'none';
+                                
+                                const origW = card.getBoundingClientRect().width || card.offsetWidth || 340;
+                                const origH = card.getBoundingClientRect().height || card.offsetHeight || 540;
+                                
+                                const scale = Math.min(340 / origW, 540 / origH);
+                                card.style.transformOrigin = 'center center';
+                                card.style.transform = 'scale(' + scale + ')';
+                                card.style.flexShrink = '0';
+                                
+                                // Render custom fields
+                                const fields = {fields_json};
+                                if (fields && fields.length) {{
+                                    fields.forEach((f, idx) => {{
+                                        const fieldEl = document.createElement('div');
+                                        fieldEl.className = 'preview-absolute-field';
+                                        card.appendChild(fieldEl);
+                                        
+                                        const rgbToCss = (rgb) => rgb ? 'rgb(' + rgb.join(',') + ')' : 'rgb(255,255,255)';
+                                        const x = Math.round(f.x * (origW / 600));
+                                        const y = Math.round(f.y * (origH / 900));
+                                        const fontSize = Math.round(f.font_size * (origW / 600));
+                                        
+                                        fieldEl.textContent = f.text || '';
+                                        fieldEl.style.position = 'absolute';
+                                        fieldEl.style.fontSize = fontSize + 'px';
+                                        fieldEl.style.color = rgbToCss(f.color);
+                                        fieldEl.style.fontWeight = f.bold ? 'bold' : 'normal';
+                                        fieldEl.style.fontStyle = f.italic ? 'italic' : 'normal';
+                                        fieldEl.style.top = y + 'px';
+                                        fieldEl.style.zIndex = '50';
+                                        
+                                        fieldEl.style.textDecoration = f.underline ? 'underline' : 'none';
+                                        fieldEl.style.textTransform = f.transform || 'none';
+                                        
+                                        let tracking = 'normal';
+                                        if (f.tracking === 'wide') tracking = '0.1em';
+                                        else if (f.tracking === 'extra_wide') tracking = '0.25em';
+                                        fieldEl.style.letterSpacing = tracking;
+                                        
+                                        let font = 'Inter, sans-serif';
+                                        if (f.font_name === 'Outfit') font = 'Outfit, sans-serif';
+                                        else if (f.font_name === 'Roboto Mono') font = '"Roboto Mono", monospace';
+                                        else if (f.font_name === 'Georgia') font = 'Georgia, serif';
+                                        else if (f.font_name === 'Playfair Display') font = '"Playfair Display", serif';
+                                        else if (f.font_name === 'Montserrat') font = 'Montserrat, sans-serif';
+                                        else if (f.font_name === 'Arial') font = 'Arial, sans-serif';
+                                        fieldEl.style.fontFamily = font;
+                                        
+                                        if (f.align === 'center') {{
+                                            fieldEl.style.left = '0';
+                                            fieldEl.style.width = '100%';
+                                            fieldEl.style.textAlign = 'center';
+                                        }} else if (f.align === 'left') {{
+                                            fieldEl.style.left = x + 'px';
+                                            fieldEl.style.width = 'auto';
+                                            fieldEl.style.textAlign = 'left';
+                                        }} else if (f.align === 'right') {{
+                                            fieldEl.style.right = (origW - x) + 'px';
+                                            fieldEl.style.width = 'auto';
+                                            fieldEl.style.textAlign = 'right';
+                                        }}
+                                    }});
+                                }}
+                            }}
+                        }});
+                    </script>
                 </body>
                 </html>
                 """
@@ -3649,43 +4078,155 @@ def _generate_id_card(name: str, reg_no: str, phone: str, email: str, uid: str, 
         # Draw custom fields
         fields = designer_settings.get("fields", [])
         for f in fields:
-            text_tpl = f.get("text", "")
-            x = f.get("x", 300)
-            y = f.get("y", 210)
-            font_size = f.get("font_size", 16)
-            color_val = f.get("color", [255, 255, 255])
-            align = f.get("align", "center")
+            field_type = f.get("type", "text")
             
-            # Resolve text value
-            resolved_text = text_tpl
-            resolved_text = resolved_text.replace("{Name}", name)
-            resolved_text = resolved_text.replace("{Registration Number}", reg_no)
-            resolved_text = resolved_text.replace("{Email Address}", email)
-            resolved_text = resolved_text.replace("{Phone Number}", phone)
-            resolved_text = resolved_text.replace("{Unique ID}", uid)
-            resolved_text = resolved_text.replace("{Pass Type}", level)
-            resolved_text = resolved_text.replace("{Event}", event_name)
-            
-            # Draw text
-            try:
-                if f.get("font_name") == "cour.ttf":
-                    font = ImageFont.truetype("cour.ttf", font_size)
-                else:
-                    font = ImageFont.truetype("arial.ttf", font_size)
-            except IOError:
-                font = ImageFont.load_default()
+            if field_type == "image":
+                # Draw custom image field
+                img_url = f.get("image_url", "")
+                bind_col = f.get("bind_column", "")
                 
-            anchor = "mm"
-            if align == "left":
-                anchor = "lm"
-            elif align == "right":
-                anchor = "rm"
+                # Check if we should resolve profile photo for this attendee
+                resolved_img_path = None
+                if bind_col and bind_col.lower() in ["profile photo", "photo", "image", "profile_photo"]:
+                    resolved_img_path = _resolve_profile_photo(reg_no, profile_photo)
                 
-            color = tuple(color_val)
-            if len(color) == 3:
-                color = (color[0], color[1], color[2], 255)
+                # Fallback to static URL
+                if not resolved_img_path or not os.path.exists(resolved_img_path):
+                    # Check if the URL points to a local static upload
+                    if img_url.startswith("/static/"):
+                        local_path = img_url.replace("/static/", "").replace("/", os.sep)
+                        resolved_img_path = os.path.join(BASE_DIR, "static", local_path)
+                    elif img_url.startswith("http://") or img_url.startswith("https://"):
+                        import requests
+                        import tempfile
+                        try:
+                            resp = requests.get(img_url, timeout=5)
+                            if resp.status_code == 200:
+                                temp_f = tempfile.NamedTemporaryFile(delete=False, suffix=".png")
+                                temp_f.write(resp.content)
+                                temp_f.close()
+                                resolved_img_path = temp_f.name
+                        except Exception as e_dl:
+                            print(f"Error downloading external asset: {e_dl}")
                 
-            draw.text((x, y), resolved_text, fill=color, font=font, anchor=anchor)
+                if resolved_img_path and os.path.exists(resolved_img_path):
+                    try:
+                        overlay_img = Image.open(resolved_img_path).convert("RGBA")
+                        img_w = f.get("width", 100)
+                        img_h = f.get("height", 100)
+                        overlay_img = overlay_img.resize((img_w, img_h), Image.Resampling.LANCZOS)
+                        
+                        x = f.get("x", 300)
+                        y = f.get("y", 250)
+                        # Paste overlay image onto the card
+                        card.paste(overlay_img, (x, y), overlay_img)
+                    except Exception as e_img:
+                        print(f"Error drawing overlay image: {e_img}")
+            else:
+                # Draw text field
+                text_tpl = f.get("text", "")
+                x = f.get("x", 300)
+                y = f.get("y", 210)
+                font_size = f.get("font_size", 16)
+                color_val = f.get("color", [255, 255, 255])
+                align = f.get("align", "center")
+                
+                # Resolve text value
+                resolved_text = text_tpl
+                resolved_text = resolved_text.replace("{Name}", name)
+                resolved_text = resolved_text.replace("{Registration Number}", reg_no)
+                resolved_text = resolved_text.replace("{Email Address}", email)
+                resolved_text = resolved_text.replace("{Phone Number}", phone)
+                resolved_text = resolved_text.replace("{Unique ID}", uid)
+                resolved_text = resolved_text.replace("{Pass Type}", level)
+                resolved_text = resolved_text.replace("{Event}", event_name)
+                
+                # Tracking (letter spacing)
+                tracking = f.get("tracking", "normal").lower()
+                if tracking == "wide":
+                    resolved_text = " ".join(resolved_text)
+                elif tracking == "extra_wide":
+                    resolved_text = "  ".join(resolved_text)
+                    
+                # Text Transform
+                transform = f.get("transform", "none").lower()
+                if transform == "uppercase":
+                    resolved_text = resolved_text.upper()
+                elif transform == "lowercase":
+                    resolved_text = resolved_text.lower()
+                elif transform == "capitalize":
+                    resolved_text = resolved_text.title()
+                
+                # Resolve font file based on font family, bold, and italic choices
+                font_family = f.get("font_name", "Arial").lower().strip()
+                font_path = "arial.ttf"
+                is_bold = f.get("bold", False)
+                is_italic = f.get("italic", False)
+                
+                if "georgia" in font_family:
+                    if is_bold and is_italic: font_path = "georgiaz.ttf"
+                    elif is_bold: font_path = "georgiab.ttf"
+                    elif is_italic: font_path = "georgiai.ttf"
+                    else: font_path = "georgia.ttf"
+                elif "times" in font_family or "roman" in font_family:
+                    if is_bold and is_italic: font_path = "timesbi.ttf"
+                    elif is_bold: font_path = "timesbd.ttf"
+                    elif is_italic: font_path = "timesi.ttf"
+                    else: font_path = "times.ttf"
+                elif "courier" in font_family or "cour" in font_family:
+                    if is_bold and is_italic: font_path = "courbi.ttf"
+                    elif is_bold: font_path = "courbd.ttf"
+                    elif is_italic: font_path = "couri.ttf"
+                    else: font_path = "cour.ttf"
+                elif "segoe" in font_family:
+                    if is_bold and is_italic: font_path = "segoeuiz.ttf"
+                    elif is_bold: font_path = "segoeuib.ttf"
+                    elif is_italic: font_path = "segoeuii.ttf"
+                    else: font_path = "segoeui.ttf"
+                elif "consolas" in font_family:
+                    if is_bold and is_italic: font_path = "consolaz.ttf"
+                    elif is_bold: font_path = "consolab.ttf"
+                    elif is_italic: font_path = "consolai.ttf"
+                    else: font_path = "consola.ttf"
+                else: # Arial / Outfit / Inter default to Arial
+                    if is_bold and is_italic: font_path = "arialbi.ttf"
+                    elif is_bold: font_path = "arialbd.ttf"
+                    elif is_italic: font_path = "ariali.ttf"
+                    else: font_path = "arial.ttf"
+                
+                resolved_font_path = font_path
+                sys_font = os.path.join("C:\\Windows\\Fonts", font_path)
+                if os.path.exists(sys_font):
+                    resolved_font_path = sys_font
+                
+                try:
+                    font = ImageFont.truetype(resolved_font_path, font_size)
+                except IOError:
+                    try:
+                        font = ImageFont.truetype("arial.ttf", font_size)
+                    except IOError:
+                        font = ImageFont.load_default()
+                    
+                anchor = "mm"
+                if align == "left":
+                    anchor = "lm"
+                elif align == "right":
+                    anchor = "rm"
+                    
+                color = tuple(color_val)
+                if len(color) == 3:
+                    color = (color[0], color[1], color[2], 255)
+                    
+                draw.text((x, y), resolved_text, fill=color, font=font, anchor=anchor)
+                
+                # Draw underline if enabled
+                if f.get("underline", False):
+                    try:
+                        bbox = draw.textbbox((x, y), resolved_text, font=font, anchor=anchor)
+                        line_y = bbox[3] + 2
+                        draw.line([(bbox[0], line_y), (bbox[2], line_y)], fill=color, width=max(1, font_size // 12))
+                    except Exception as e_und:
+                        print(f"Error drawing underline: {e_und}")
             
         # Draw QR Code
         qr_cfg = designer_settings.get("qr", {"x": 180, "y": 550, "size": 240})
@@ -3723,7 +4264,7 @@ def _generate_id_card(name: str, reg_no: str, phone: str, email: str, uid: str, 
 # 2. Theme Selection Logic based on event_name or configuration override
     if cfg is None:
         cfg = get_event_config()
-    configured_theme = cfg.get("id_card_theme", "auto")
+    configured_theme = theme or cfg.get("id_card_theme", "auto")
     
     if configured_theme != "auto" and configured_theme in theme_configs:
         theme = configured_theme
@@ -5226,6 +5767,21 @@ def export_audit_log():
         )
 
 
+@app.route("/help_content")
+def help_content():
+    """Return the system documentation HELP.md as JSON."""
+    help_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "HELP.md")
+    if os.path.exists(help_file):
+        try:
+            with open(help_file, "r", encoding="utf-8") as f:
+                content = f.read()
+            return jsonify(content=content)
+        except Exception as e:
+            return jsonify(content=f"Error reading HELP.md: {str(e)}"), 500
+    return jsonify(content="HELP.md not found on server."), 404
+
+
+
 
 
 @app.route("/download/id_card/<reg_no>")
@@ -5256,6 +5812,12 @@ def download_id_card(reg_no):
         email = _clean_val(row.get(col_map.get("email address")))
         uid = _clean_val(row.get(col_map.get("unique id")))
         
+        profile_photo = ""
+        for k, v in row_dict.items():
+            if str(k).lower().strip() in ["profile photo", "photo", "image", "profile_photo"]:
+                profile_photo = _clean_val(v)
+                break
+                
         level = ""
         cfg = get_event_config()
         group_col = cfg.get("group_column", "")
@@ -5311,7 +5873,8 @@ def download_id_card(reg_no):
             qr_path=qr_path,
             event_name=cfg.get("event_name_template", "the Event"),
             level=level,
-            cfg=resolved_cfg
+            cfg=resolved_cfg,
+            profile_photo=profile_photo
         )
         
         return send_file(pdf_path, as_attachment=True, download_name=f"id_card_{reg_no}.pdf")
@@ -5334,11 +5897,47 @@ def list_id_templates():
                     "filename": f,
                     "name": data.get("name", f),
                     "html": data.get("html", ""),
-                    "css": data.get("css", "")
+                    "css": data.get("css", ""),
+                    "body_class": data.get("body_class", ""),
+                    "tailwind_config": data.get("tailwind_config", "")
                 })
         except Exception:
             pass
     return jsonify(templates)
+
+
+@app.route("/save_template_preset", methods=["POST"])
+def save_template_preset():
+    try:
+        data = request.json or {}
+        name = data.get("name", "").strip()
+        if not name:
+            return jsonify(message="Template name is required."), 400
+        
+        import re
+        slug = re.sub(r'[^a-z0-9]+', '_', name.lower()).strip('_')
+        if not slug:
+            slug = "custom_template"
+        filename = f"{slug}_id.json"
+        
+        templates_dir = os.path.join(BASE_DIR, "static", "id_templates")
+        os.makedirs(templates_dir, exist_ok=True)
+        filepath = os.path.join(templates_dir, filename)
+        
+        preset_data = {
+            "name": name,
+            "html": data.get("html", ""),
+            "css": data.get("css", ""),
+            "body_class": data.get("body_class", ""),
+            "tailwind_config": data.get("tailwind_config", "")
+        }
+        
+        with open(filepath, "w", encoding="utf-8") as f:
+            json.dump(preset_data, f, indent=2, ensure_ascii=False)
+            
+        return jsonify(message=f"Template preset '{name}' saved successfully.", filename=filename)
+    except Exception as e:
+        return jsonify(message=f"Error saving template: {str(e)}"), 500
 
 
 @app.route("/preview_id_card", methods=["GET", "POST"])
@@ -5360,9 +5959,11 @@ def preview_id_card():
     if request.method == "POST":
         # Parse visual designer layout settings from JSON payload
         designer_payload = request.json or {}
+        cfg_global = get_event_config()
         mock_cfg = {
             "id_card_designer_settings": designer_payload,
-            "enable_id_card_generation": True
+            "enable_id_card_generation": True,
+            "id_card_photo_option": cfg_global.get("id_card_photo_option", "image_needed")
         }
     else:
         # GET request: load from query params as before
@@ -5379,6 +5980,7 @@ def preview_id_card():
         label_phone = request.args.get("label_phone", "PHONE:").strip()
         label_uid = request.args.get("label_uid", "UNIQUE ID:").strip()
         label_pass = request.args.get("label_pass", "PASS TYPE:").strip()
+        photo_option = request.args.get("photo_option", "image_needed").strip()
         mock_cfg = {
             "id_card_theme": theme,
             "id_card_header": header,
@@ -5393,6 +5995,7 @@ def preview_id_card():
             "id_card_label_phone": label_phone,
             "id_card_label_uid": label_uid,
             "id_card_label_pass": label_pass,
+            "id_card_photo_option": photo_option,
             "enable_id_card_generation": True
         }
         
@@ -5406,17 +6009,76 @@ def preview_id_card():
         img = qr.make_image(fill_color="black", back_color="white")
         img.save(dummy_qr)
         
+    reg_no_param = request.args.get("reg_no", "").strip()
+    name_val = "John Doe"
+    reg_no_val = "DEMO12345"
+    phone_val = "+91 98765 43210"
+    email_val = "johndoe@example.com"
+    uid_val = "ABC123XY"
+    level_val = "VIP"
+    qr_path_val = dummy_qr
+    profile_photo_val = ""
+    
+    if reg_no_param:
+        excel_file = get_excel_file()
+        if os.path.exists(excel_file):
+            try:
+                with lock:
+                    df_xl = pd.read_excel(excel_file, engine="openpyxl")
+                df_xl.columns = df_xl.columns.astype(str).str.strip()
+                col_map = {c.lower(): c for c in df_xl.columns}
+                reg_col = col_map.get("registration number")
+                if reg_col:
+                    row_match = df_xl[df_xl[reg_col].astype(str).str.strip().str.lower() == reg_no_param.lower()]
+                    if not row_match.empty:
+                        row = row_match.iloc[0]
+                        row_dict = {c_orig: _clean_val(row.get(c_orig)) for c_low, c_orig in col_map.items()}
+                        name_val = _clean_val(row.get(col_map.get("name"))) or name_val
+                        reg_no_val = _clean_val(row.get(col_map.get("registration number"))) or reg_no_param
+                        phone_val = _clean_val(row.get(col_map.get("phone number"))) or phone_val
+                        email_val = _clean_val(row.get(col_map.get("email address"))) or email_val
+                        uid_val = _clean_val(row.get(col_map.get("unique id"))) or uid_val
+                        
+                        # Resolve level/subgroup
+                        group_col_val = mock_cfg.get("group_column", "")
+                        if group_col_val:
+                            col_val = None
+                            for k, v in row_dict.items():
+                                if str(k).strip().lower() == group_col_val.lower().strip():
+                                    col_val = str(v).strip()
+                                    break
+                            if col_val and col_val.lower() not in ["nan", "none", ""]:
+                                level_val = col_val
+                        else:
+                            for k, v in row_dict.items():
+                                if "level" in k.lower() or "subgroup" in k.lower():
+                                    level_val = v
+                                    break
+                                    
+                        # Resolve custom photo link
+                        for k, v in row_dict.items():
+                            if str(k).lower().strip() in ["profile photo", "photo", "image", "profile_photo"]:
+                                profile_photo_val = _clean_val(v)
+                                break
+                                
+                        qr_file_path = os.path.join(get_qr_dir(), f"{reg_no_val}.png")
+                        if os.path.exists(qr_file_path):
+                            qr_path_val = qr_file_path
+            except Exception as e_load:
+                print(f"[Preview Reg No] Error loading attendee details: {e_load}")
+
     try:
         pdf_path, png_path = _generate_id_card(
-            name="John Doe",
-            reg_no="DEMO12345",
-            phone="+91 98765 43210",
-            email="johndoe@example.com",
-            uid="ABC123XY",
-            qr_path=dummy_qr,
-            event_name="SAMPLE CONFERENCE",
-            level="VIP",
-            cfg=mock_cfg
+            name=name_val,
+            reg_no=reg_no_val,
+            phone=phone_val,
+            email=email_val,
+            uid=uid_val,
+            qr_path=qr_path_val,
+            event_name=mock_cfg.get("event_name_template", "SAMPLE CONFERENCE"),
+            level=level_val,
+            cfg=mock_cfg,
+            profile_photo=profile_photo_val
         )
         return send_file(png_path, mimetype="image/png")
     except Exception as e:
@@ -5528,16 +6190,18 @@ def _send_single_sms(phone, message, provider, cfg) -> tuple[bool, str]:
 
 
 # ── Individual / Bulk WhatsApp sender helper ────────────────────────────────────
-def _send_single_whatsapp(phone, name, reg_no, row_dict, cfg, host_url) -> tuple[bool, str, dict]:
+def _send_single_whatsapp(phone, name, reg_no, row_dict, cfg, host_url, body_override=None) -> tuple[bool, str, dict]:
     provider = cfg.get("wa_provider", "manual")
     event_name = cfg.get("event_name_template", "the Event")
     qr_url = f"{host_url}qrcodes/{reg_no}.png"
     
-    from_cfg_whatsapp_template = cfg.get("whatsapp_template", "")
-    whatsapp_template = _get_attendee_template(cfg, row_dict, "whatsapp_template", from_cfg_whatsapp_template)
-    
-    extra = {"Event": event_name, "QR_URL": qr_url}
-    body_text = format_template(whatsapp_template, row_dict, extra)
+    if body_override is not None:
+        body_text = body_override
+    else:
+        from_cfg_whatsapp_template = cfg.get("whatsapp_template", "")
+        whatsapp_template = _get_attendee_template(cfg, row_dict, "whatsapp_template", from_cfg_whatsapp_template)
+        extra = {"Event": event_name, "QR_URL": qr_url}
+        body_text = format_template(whatsapp_template, row_dict, extra)
     
     clean_phone = _normalize_phone(phone)
     if provider == "manual":
@@ -5559,10 +6223,10 @@ def _send_single_whatsapp(phone, name, reg_no, row_dict, cfg, host_url) -> tuple
             from_number = f"whatsapp:{sender}"
             to_number = f"whatsapp:{clean_phone}"
             
-            is_local = "localhost" in host_url or "127.0.0.1" in host_url
+            is_local = any(x in host_url for x in ["localhost", "127.0.0.1", "192.168.", "10.", "172.16.", "172.17.", "172.18.", "172.19.", "172.2", "172.3"])
             if is_local:
                 client.messages.create(
-                    body=body_text + f"\n\nDownload QR at: {qr_url}",
+                    body=body_text,
                     from_=from_number,
                     to=to_number
                 )
@@ -5731,7 +6395,7 @@ def _resolve_email_attachments(reg_no, row_dict, cfg):
         return [qr_file]
 
 
-def _send_single_email_helper(reg_no, cfg) -> tuple[bool, str]:
+def _send_single_email_helper(reg_no, cfg, subject_override=None, body_override=None) -> tuple[bool, str]:
     excel_file = get_excel_file()
     if not os.path.exists(excel_file):
         return False, "Registration spreadsheet missing."
@@ -5768,16 +6432,71 @@ def _send_single_email_helper(reg_no, cfg) -> tuple[bool, str]:
             img = qr.make_image(fill_color="black", back_color="white")
             img.save(qr_file)
             
-        from_cfg_email_subject = cfg.get("email_subject", "Your Event QR Code")
-        from_cfg_email_template = cfg.get("email_template", "")
-        subject = _get_attendee_template(cfg, row_dict, "email_subject", from_cfg_email_subject)
-        email_template = _get_attendee_template(cfg, row_dict, "email_template", from_cfg_email_template)
         extra = {"Event": event_name}
-        body = format_template(email_template, row_dict, extra)
-        subject_formatted = format_template(subject, row_dict, extra)
+        if subject_override is not None:
+            subject_formatted = subject_override
+        else:
+            from_cfg_email_subject = cfg.get("email_subject", "Your Event QR Code")
+            subject = _get_attendee_template(cfg, row_dict, "email_subject", from_cfg_email_subject)
+            subject_formatted = format_template(subject, row_dict, extra)
+            
+        if body_override is not None:
+            body = body_override
+        else:
+            from_cfg_email_template = cfg.get("email_template", "")
+            email_template = _get_attendee_template(cfg, row_dict, "email_template", from_cfg_email_template)
+            body = format_template(email_template, row_dict, extra)
         
         yag = yagmail.SMTP(user=sender_email, password=app_password)
-        attachments_to_send = _resolve_email_attachments(reg_no, row_dict, cfg)
+        profile_photo = ""
+        for k, v in row_dict.items():
+            if str(k).lower().strip() in ["profile photo", "photo", "image", "profile_photo"]:
+                profile_photo = _clean_val(v)
+                break
+        
+        # We need to pass the profile_photo for card rendering inside resolved_cfg
+        resolved_cfg = cfg.copy()
+        # Find group/subgroup specific overrides
+        designer_settings = cfg.get("id_card_designer_settings") or {}
+        if reg_no:
+            try:
+                groups = _load_groups()
+                for g in groups:
+                    if reg_no in g.get("reg_nos", []):
+                        if "id_card_designer_settings" in g:
+                            designer_settings = g["id_card_designer_settings"]
+                            break
+            except Exception:
+                pass
+        group_col_val = cfg.get("group_column", "").strip()
+        if group_col_val:
+            col_val = None
+            for k, v in row_dict.items():
+                if str(k).strip().lower() == group_col_val.lower().strip():
+                    col_val = str(v).strip()
+                    break
+            if col_val and col_val.lower() not in ["nan", "none", ""]:
+                sub_templates = cfg.get("subgroup_templates", {})
+                key = f"{group_col_val}:{col_val}"
+                if key in sub_templates:
+                    sub_tpl = sub_templates[key]
+                    if "id_card_designer_settings" in sub_tpl:
+                        designer_settings = sub_tpl["id_card_designer_settings"]
+        resolved_cfg["id_card_designer_settings"] = designer_settings
+        
+        # Override generate function locally to draw with profile photo
+        original_generate = globals().get("_generate_id_card")
+        
+        def _resolve_attachments_local(r_no, r_dict, config_dict):
+            import functools
+            bound_gen = functools.partial(original_generate, profile_photo=profile_photo)
+            globals()["_generate_id_card"] = bound_gen
+            try:
+                return _resolve_email_attachments(r_no, r_dict, config_dict)
+            finally:
+                globals()["_generate_id_card"] = original_generate
+                
+        attachments_to_send = _resolve_attachments_local(reg_no, row_dict, resolved_cfg)
         yag.send(to=recipient, subject=subject_formatted, contents=body, attachments=attachments_to_send)
         yag.close()
         _update_sent_status(reg_no, "email", "Sent")
@@ -5786,7 +6505,7 @@ def _send_single_email_helper(reg_no, cfg) -> tuple[bool, str]:
         _update_sent_status(reg_no, "email", "Failed")
         return False, f"Error sending email: {str(e)}"
 
-def _send_single_whatsapp_helper(reg_no, cfg, host_url) -> tuple[bool, str, dict]:
+def _send_single_whatsapp_helper(reg_no, cfg, host_url, body_override=None) -> tuple[bool, str, dict]:
     excel_file = get_excel_file()
     if not os.path.exists(excel_file):
         return False, "Registration spreadsheet missing.", {}
@@ -5807,7 +6526,37 @@ def _send_single_whatsapp_helper(reg_no, cfg, host_url) -> tuple[bool, str, dict
         phone = _clean_val(row.get(col_map.get("phone number")))
         if not phone:
             return False, "Phone number missing for this attendee.", {}
-        success, msg, extra_data = _send_single_whatsapp(phone, name, reg_no, row_dict, cfg, host_url)
+        
+        # Resolve group/subgroup specific overrides
+        designer_settings = cfg.get("id_card_designer_settings") or {}
+        if reg_no:
+            try:
+                groups = _load_groups()
+                for g in groups:
+                    if reg_no in g.get("reg_nos", []):
+                        if "id_card_designer_settings" in g:
+                            designer_settings = g["id_card_designer_settings"]
+                            break
+            except Exception:
+                pass
+        group_col_val = cfg.get("group_column", "").strip()
+        if group_col_val:
+            col_val = None
+            for k, v in row_dict.items():
+                if str(k).strip().lower() == group_col_val.lower().strip():
+                    col_val = str(v).strip()
+                    break
+            if col_val and col_val.lower() not in ["nan", "none", ""]:
+                sub_templates = cfg.get("subgroup_templates", {})
+                key = f"{group_col_val}:{col_val}"
+                if key in sub_templates:
+                    sub_tpl = sub_templates[key]
+                    if "id_card_designer_settings" in sub_tpl:
+                        designer_settings = sub_tpl["id_card_designer_settings"]
+        resolved_cfg = cfg.copy()
+        resolved_cfg["id_card_designer_settings"] = designer_settings
+        
+        success, msg, extra_data = _send_single_whatsapp(phone, name, reg_no, row_dict, resolved_cfg, host_url, body_override=body_override)
         if success:
             if extra_data.get("method") != "manual":
                 _update_sent_status(reg_no, "whatsapp", "Sent")
@@ -5817,7 +6566,7 @@ def _send_single_whatsapp_helper(reg_no, cfg, host_url) -> tuple[bool, str, dict
     except Exception as e:
         return False, f"Error sending WhatsApp: {str(e)}", {}
 
-def _send_single_sms_helper(reg_no, cfg, host_url) -> tuple[bool, str]:
+def _send_single_sms_helper(reg_no, cfg, host_url, body_override=None) -> tuple[bool, str]:
     excel_file = get_excel_file()
     if not os.path.exists(excel_file):
         return False, "Registration spreadsheet missing."
@@ -5839,10 +6588,13 @@ def _send_single_sms_helper(reg_no, cfg, host_url) -> tuple[bool, str]:
         phone = _clean_val(row.get(col_map.get("phone number")))
         if not phone:
             return False, "Phone number missing for this attendee."
-        from_cfg_sms_template = cfg.get("sms_template", "")
-        sms_template = _get_attendee_template(cfg, row_dict, "sms_template", from_cfg_sms_template)
-        extra = {"Event": event_name, "QR_URL": f"{host_url}qrcodes/{reg_no}.png"}
-        body_text = format_template(sms_template, row_dict, extra)
+        if body_override is not None:
+            body_text = body_override
+        else:
+            from_cfg_sms_template = cfg.get("sms_template", "")
+            sms_template = _get_attendee_template(cfg, row_dict, "sms_template", from_cfg_sms_template)
+            extra = {"Event": event_name, "QR_URL": f"{host_url}qrcodes/{reg_no}.png"}
+            body_text = format_template(sms_template, row_dict, extra)
         success, msg = _send_single_sms(phone, body_text, provider, cfg)
         if success:
             _update_sent_status(reg_no, "sms", "Sent")
@@ -5891,6 +6643,242 @@ def send_sms_single():
     cfg = get_event_config()
     success, msg = _send_single_sms_helper(reg_no, cfg, request.host_url)
     return jsonify(success=success, message=msg), (200 if success else 500)
+
+
+@app.route("/send_id_card_single", methods=["POST"])
+def send_id_card_single():
+    if not request.is_json:
+        return jsonify(success=False, message="Request must be JSON."), 415
+    payload = request.json or {}
+    reg_no = payload.get("reg_no", "").strip()
+    channel = payload.get("channel", "email").strip().lower()
+    
+    email_subject = payload.get("email_subject")
+    email_body = payload.get("email_body")
+    whatsapp_body = payload.get("whatsapp_body")
+    sms_body = payload.get("sms_body")
+    
+    if not reg_no:
+        return jsonify(success=False, message="Registration number is required."), 400
+    
+    cfg = get_event_config()
+    
+    success = False
+    messages_list = []
+    
+    if channel in ("email", "both", "all"):
+        success_em, msg_em = _send_single_email_helper(reg_no, cfg, subject_override=email_subject, body_override=email_body)
+        if success_em:
+            success = True
+            messages_list.append(f"Email sent successfully")
+        else:
+            messages_list.append(f"Email failed: {msg_em}")
+            
+    if channel in ("whatsapp", "both", "all"):
+        success_wa, msg_wa, _ = _send_single_whatsapp_helper(reg_no, cfg, request.host_url, body_override=whatsapp_body)
+        if success_wa:
+            success = True
+            messages_list.append(f"WhatsApp sent successfully")
+        else:
+            messages_list.append(f"WhatsApp failed: {msg_wa}")
+            
+    if channel in ("sms", "all"):
+        success_sms, msg_sms = _send_single_sms_helper(reg_no, cfg, request.host_url, body_override=sms_body)
+        if success_sms:
+            success = True
+            messages_list.append(f"SMS sent successfully")
+        else:
+            messages_list.append(f"SMS failed: {msg_sms}")
+            
+    final_msg = " | ".join(messages_list) if messages_list else "No notification channel selected."
+    return jsonify(success=success, message=final_msg), (200 if success else 400)
+
+
+@app.route("/upload_profile_photo/<reg_no>", methods=["POST"])
+def upload_profile_photo(reg_no):
+    reg_no = reg_no.strip()
+    if 'file' not in request.files:
+        return jsonify(success=False, message="No file part in request."), 400
+    file = request.files['file']
+    if file.filename == '':
+        return jsonify(success=False, message="No selected file."), 400
+        
+    if file:
+        cache_dir = os.path.join(get_qr_dir(), "profile_photos")
+        os.makedirs(cache_dir, exist_ok=True)
+        cached_path = os.path.join(cache_dir, f"photo_{reg_no}.png")
+        
+        file.save(cached_path)
+        
+        excel_file = get_excel_file()
+        if os.path.exists(excel_file):
+            try:
+                with lock:
+                    wb = load_workbook(excel_file)
+                    ws = wb.active
+                    
+                    headers = [cell.value for cell in ws[1]]
+                    photo_col_idx = None
+                    for idx, h in enumerate(headers, 1):
+                        if h and str(h).strip().lower() == "profile photo":
+                            photo_col_idx = idx
+                            break
+                            
+                    if not photo_col_idx:
+                        photo_col_idx = len(headers) + 1
+                        ws.cell(row=1, column=photo_col_idx, value="Profile Photo")
+                        
+                    reg_col_idx = None
+                    for idx, h in enumerate(headers, 1):
+                        if h and str(h).strip().lower() == "registration number":
+                            reg_col_idx = idx
+                            break
+                            
+                    if reg_col_idx:
+                        row_found = None
+                        for row in range(2, ws.max_row + 1):
+                            val = str(ws.cell(row=row, column=reg_col_idx).value or "").strip()
+                            if val.lower() == reg_no.lower():
+                                row_found = row
+                                break
+                                
+                        if row_found:
+                            ws.cell(row=row_found, column=photo_col_idx, value=cached_path)
+                            _atomic_save(wb, excel_file)
+                            threading.Thread(target=_rebuild_highlighted, daemon=True).start()
+                            return jsonify(success=True, message="Profile photo uploaded and cached successfully.")
+                wb.close()
+                return jsonify(success=False, message="Attendee row not found in roster."), 404
+            except Exception as e:
+                return jsonify(success=False, message=f"Excel update error: {str(e)}"), 500
+        return jsonify(success=False, message="Registration spreadsheet not found."), 404
+
+
+@app.route("/upload_global_logo", methods=["POST"])
+def upload_global_logo():
+    if 'file' not in request.files:
+        return jsonify(success=False, message="No file part in request."), 400
+    file = request.files['file']
+    if file.filename == '':
+        return jsonify(success=False, message="No selected file."), 400
+        
+    if file:
+        upload_dir = os.path.join(BASE_DIR, "static", "uploads")
+        os.makedirs(upload_dir, exist_ok=True)
+        logo_path = os.path.join(upload_dir, "logo.png")
+        file.save(logo_path)
+        return jsonify(success=True, message="Global logo uploaded successfully.", url="/static/uploads/logo.png")
+
+
+@app.route("/upload_designer_asset", methods=["POST"])
+def upload_designer_asset():
+    if 'file' not in request.files:
+        return jsonify(success=False, message="No file part in request."), 400
+    file = request.files['file']
+    if file.filename == '':
+        return jsonify(success=False, message="No selected file."), 400
+    
+    if file:
+        upload_dir = os.path.join(BASE_DIR, "static", "uploads", "assets")
+        os.makedirs(upload_dir, exist_ok=True)
+        import werkzeug.utils
+        import time
+        filename = werkzeug.utils.secure_filename(file.filename)
+        if not filename:
+            filename = f"asset_{int(time.time())}.png"
+        file_path = os.path.join(upload_dir, filename)
+        file.save(file_path)
+        url = f"/static/uploads/assets/{filename}"
+        return jsonify(success=True, url=url, filename=filename)
+
+
+@app.route("/list_designer_assets", methods=["GET"])
+def list_designer_assets():
+    upload_dir = os.path.join(BASE_DIR, "static", "uploads", "assets")
+    os.makedirs(upload_dir, exist_ok=True)
+    files = []
+    for f in os.listdir(upload_dir):
+        if f.lower().endswith(('.png', '.jpg', '.jpeg', '.gif', '.svg')):
+            files.append({
+                "filename": f,
+                "url": f"/static/uploads/assets/{f}"
+            })
+    return jsonify(success=True, assets=files)
+
+
+@app.route("/update_attendee_details", methods=["POST"])
+def update_attendee_details():
+    if not request.is_json:
+        return jsonify(success=False, message="Request must be JSON."), 415
+    payload = request.json or {}
+    reg_no = payload.get("reg_no", "").strip()
+    name = payload.get("name", "").strip()
+    email = payload.get("email", "").strip()
+    phone = payload.get("phone", "").strip()
+    subgroup = payload.get("subgroup", "").strip()
+    profile_photo = payload.get("profile_photo", "").strip()
+    
+    if not reg_no:
+        return jsonify(success=False, message="Registration number is required."), 400
+        
+    excel_file = get_excel_file()
+    if os.path.exists(excel_file):
+        try:
+            with lock:
+                wb = load_workbook(excel_file)
+                ws = wb.active
+                headers = [cell.value for cell in ws[1]]
+                col_map = {str(h).lower().strip(): idx for idx, h in enumerate(headers, 1) if h}
+                
+                reg_idx = col_map.get("registration number")
+                if not reg_idx:
+                    wb.close()
+                    return jsonify(success=False, message="Registration number column missing."), 500
+                    
+                row_found = None
+                for row in range(2, ws.max_row + 1):
+                    val = str(ws.cell(row=row, column=reg_idx).value or "").strip()
+                    if val.lower() == reg_no.lower():
+                        row_found = row
+                        break
+                        
+                if row_found:
+                    if "name" in col_map and name:
+                        ws.cell(row=row_found, column=col_map["name"], value=name)
+                    if "email address" in col_map:
+                        ws.cell(row=row_found, column=col_map["email address"], value=email)
+                    if "phone number" in col_map:
+                        ws.cell(row=row_found, column=col_map["phone number"], value=phone)
+                        
+                    cfg = get_event_config()
+                    group_col = cfg.get("group_column", "").strip().lower()
+                    subgroup_col_idx = col_map.get(group_col) if group_col else None
+                    if not subgroup_col_idx:
+                        for k in ["subgroup", "group", "ticket type", "category", "pass type"]:
+                            if k in col_map:
+                                subgroup_col_idx = col_map[k]
+                                break
+                    if subgroup_col_idx and subgroup:
+                        ws.cell(row=row_found, column=subgroup_col_idx, value=subgroup)
+                        
+                    # Profile Photo link column
+                    photo_col_idx = col_map.get("profile photo")
+                    if not photo_col_idx:
+                        photo_col_idx = len(headers) + 1
+                        ws.cell(row=1, column=photo_col_idx, value="Profile Photo")
+                    ws.cell(row=row_found, column=photo_col_idx, value=profile_photo)
+                    
+                    _atomic_save(wb, excel_file)
+                    threading.Thread(target=_rebuild_highlighted, daemon=True).start()
+                    return jsonify(success=True, message="Attendee details updated successfully in roster.")
+                    
+            wb.close()
+            return jsonify(success=False, message="Attendee not found."), 404
+        except Exception as e:
+            return jsonify(success=False, message=f"Database update error: {str(e)}"), 500
+    return jsonify(success=False, message="Spreadsheet not found."), 404
+
+
 load_active_event()
 
 
