@@ -2666,7 +2666,36 @@ Distribution of check-in arrivals over time.
   // Helper to escape HTML safely
   function escapeHtml(str) {
     if (!str) return '';
-    return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;')
+      .replace(/`/g, '&#96;');
+  }
+
+  // Escape a value that lands inside a JS string literal inside an HTML
+  // attribute -- i.e. onclick="doThing('HERE')".
+  //
+  // escapeHtml() alone is NOT enough here. The browser decodes HTML entities
+  // *before* the JS parser sees the attribute, so a &#39; decodes back to a
+  // bare quote and still closes the string. Values reaching these handlers
+  // come from scanned QR payloads, imported rosters and scanner-supplied
+  // device names, so they must be escaped for JS first, then for the
+  // attribute: the browser undoes the second layer and hands the JS parser a
+  // correctly-escaped literal.
+  function escapeJsAttr(str) {
+    if (str === null || str === undefined) return '';
+    return String(str)
+      .replace(/\\/g, '\\\\')
+      .replace(/'/g, "\\'")
+      .replace(/\r/g, '\\r')
+      .replace(/\n/g, '\\n')
+      .replace(/&/g, '&amp;')
+      .replace(/"/g, '&quot;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
   }
 
   // Get device browser/OS info
@@ -2898,7 +2927,7 @@ Distribution of check-in arrivals over time.
               <div>
                 <strong style="color: var(--accent2); font-size: 0.85rem; font-family: var(--mono);">${escapeHtml(item.qr_data)}</strong>
                 <div style="font-size: 0.7rem; color: var(--muted); margin-top: 2px;">
-                  Failed at: <span style="font-family: var(--mono);">${item.timestamp}</span>
+                  Failed at: <span style="font-family: var(--mono);">${escapeHtml(item.timestamp)}</span>
                 </div>
               </div>
               <span class="badge-status warn" style="font-size: 0.65rem; padding: 2px 6px;">${escapeHtml(item.reason)}</span>
@@ -2907,8 +2936,8 @@ Distribution of check-in arrivals over time.
               Device: <strong>${escapeHtml(item.device_name)}</strong>
             </div>
             <div style="display: flex; gap: 8px; margin-top: 4px;">
-              <button onclick="approveQuarantine('${item.id}', '${escapeHtml(item.qr_data)}')" class="ops-btn" style="margin: 0; padding: 4px 12px; font-size: 0.72rem; background: rgba(0, 245, 160, 0.1); border-color: rgba(0, 245, 160, 0.3); color: var(--accent); cursor: pointer;">Approve</button>
-              <button onclick="rejectQuarantine('${item.id}')" class="ops-btn" style="margin: 0; padding: 4px 12px; font-size: 0.72rem; background: rgba(239, 68, 68, 0.1); border-color: rgba(239, 68, 68, 0.3); color: #ef4444; cursor: pointer;">Reject</button>
+              <button onclick="approveQuarantine('${escapeJsAttr(item.id)}', '${escapeJsAttr(item.qr_data)}')" class="ops-btn" style="margin: 0; padding: 4px 12px; font-size: 0.72rem; background: rgba(0, 245, 160, 0.1); border-color: rgba(0, 245, 160, 0.3); color: var(--accent); cursor: pointer;">Approve</button>
+              <button onclick="rejectQuarantine('${escapeJsAttr(item.id)}')" class="ops-btn" style="margin: 0; padding: 4px 12px; font-size: 0.72rem; background: rgba(239, 68, 68, 0.1); border-color: rgba(239, 68, 68, 0.3); color: #ef4444; cursor: pointer;">Reject</button>
             </div>
           `;
           container.appendChild(itemEl);
@@ -3171,8 +3200,8 @@ Distribution of check-in arrivals over time.
     if (matchedNavs.length > 0) {
       html += '<div style="font-size: 0.62rem; font-weight: 700; text-transform: uppercase; color: var(--accent); padding: 6px 12px; letter-spacing: 0.05em; border-bottom: 1px solid rgba(255,255,255,0.03);">Navigation Tabs</div>';
       matchedNavs.forEach(nav => {
-        html += `<div class="search-item" style="padding: 8px 12px; font-size: 0.76rem; color: var(--text); cursor: pointer; display: flex; align-items: center; justify-content: space-between;" onclick="switchToTab('${nav.tab}')">
-          <span>${nav.name}</span>
+        html += `<div class="search-item" style="padding: 8px 12px; font-size: 0.76rem; color: var(--text); cursor: pointer; display: flex; align-items: center; justify-content: space-between;" onclick="switchToTab('${escapeJsAttr(nav.tab)}')">
+          <span>${escapeHtml(nav.name)}</span>
           <span style="font-size: 0.65rem; color: var(--muted); background: rgba(255,255,255,0.05); padding: 1px 4px; border-radius: 3px;">Jump</span>
         </div>`;
       });
@@ -3202,8 +3231,8 @@ Distribution of check-in arrivals over time.
     if (matchedSettings.length > 0) {
       html += '<div style="font-size: 0.62rem; font-weight: 700; text-transform: uppercase; color: var(--accent2); padding: 6px 12px; letter-spacing: 0.05em; border-bottom: 1px solid rgba(255,255,255,0.03); margin-top: 6px;">Settings</div>';
       matchedSettings.forEach(f => {
-        html += `<div class="search-item" style="padding: 8px 12px; font-size: 0.76rem; color: var(--text); cursor: pointer; display: flex; align-items: center; justify-content: space-between;" onclick="focusSettingField('${f.id}')">
-          <span>⚙️ ${f.name}</span>
+        html += `<div class="search-item" style="padding: 8px 12px; font-size: 0.76rem; color: var(--text); cursor: pointer; display: flex; align-items: center; justify-content: space-between;" onclick="focusSettingField('${escapeJsAttr(f.id)}')">
+          <span>⚙️ ${escapeHtml(f.name)}</span>
           <span style="font-size: 0.65rem; color: var(--muted); background: rgba(255,255,255,0.05); padding: 1px 4px; border-radius: 3px;">Configure</span>
         </div>`;
       });
@@ -3220,12 +3249,12 @@ Distribution of check-in arrivals over time.
       if (matchedGuests.length > 0) {
         html += '<div style="font-size: 0.62rem; font-weight: 700; text-transform: uppercase; color: #f39c12; padding: 6px 12px; letter-spacing: 0.05em; border-bottom: 1px solid rgba(255,255,255,0.03); margin-top: 6px;">Attendees</div>';
         matchedGuests.forEach(g => {
-          html += `<div class="search-item" style="padding: 8px 12px; font-size: 0.76rem; color: var(--text); cursor: pointer; display: flex; align-items: center; justify-content: space-between;" onclick="focusAttendee('${g.reg_no}')">
+          html += `<div class="search-item" style="padding: 8px 12px; font-size: 0.76rem; color: var(--text); cursor: pointer; display: flex; align-items: center; justify-content: space-between;" onclick="focusAttendee('${escapeJsAttr(g.reg_no)}')">
             <div>
-              <span style="font-weight: 700;">${g.name}</span> 
-              <span style="color: var(--muted); font-size: 0.7rem;">(${g.reg_no})</span>
+              <span style="font-weight: 700;">${escapeHtml(g.name)}</span> 
+              <span style="color: var(--muted); font-size: 0.7rem;">(${escapeHtml(g.reg_no)})</span>
             </div>
-            <span style="font-size: 0.65rem; color: #fff; background: ${(g.status || '').toLowerCase().includes('scanned') || (g.status || '').toLowerCase().includes('manual') ? '#2ecc71' : 'var(--muted)'}; padding: 1px 5px; border-radius: 4px;">${g.status}</span>
+            <span style="font-size: 0.65rem; color: #fff; background: ${(g.status || '').toLowerCase().includes('scanned') || (g.status || '').toLowerCase().includes('manual') ? '#2ecc71' : 'var(--muted)'}; padding: 1px 5px; border-radius: 4px;">${escapeHtml(g.status)}</span>
           </div>`;
         });
       }
@@ -4841,8 +4870,8 @@ Distribution of check-in arrivals over time.
         render: (d, type, row) => {
           if (!d) return `<span style="color:var(--muted);">—</span>`;
           const cleanPhone = d.replace(/[^\d+]/g, '');
-          const whatsappBtn = `<button onclick="sendWhatsappSingle('${escapeHtml(row.reg_no)}', '${escapeHtml(cleanPhone)}', '${escapeHtml(row.name)}')" class="view-qr-btn" style="background: rgba(0,245,160,0.08); color: var(--accent); border-color: rgba(0,245,160,0.3); padding: 2px 6px; font-size: 0.7rem; margin-top: 4px; border-radius: 4px; border: 1px solid; line-height: 1.2; width: fit-content; text-align: center; cursor: pointer;">Send WA</button>`;
-          const smsBtn = `<button onclick="sendSmsSingle('${escapeHtml(row.reg_no)}')" class="view-qr-btn" style="background: rgba(255,107,53,0.08); color: var(--warn); border-color: rgba(255,107,53,0.3); padding: 2px 6px; font-size: 0.7rem; margin-top: 4px; border-radius: 4px; border: 1px solid; line-height: 1.2; width: fit-content; text-align: center; cursor: pointer; margin-left: 4px;">Send SMS</button>`;
+          const whatsappBtn = `<button onclick="sendWhatsappSingle('${escapeJsAttr(row.reg_no)}', '${escapeJsAttr(cleanPhone)}', '${escapeJsAttr(row.name)}')" class="view-qr-btn" style="background: rgba(0,245,160,0.08); color: var(--accent); border-color: rgba(0,245,160,0.3); padding: 2px 6px; font-size: 0.7rem; margin-top: 4px; border-radius: 4px; border: 1px solid; line-height: 1.2; width: fit-content; text-align: center; cursor: pointer;">Send WA</button>`;
+          const smsBtn = `<button onclick="sendSmsSingle('${escapeJsAttr(row.reg_no)}')" class="view-qr-btn" style="background: rgba(255,107,53,0.08); color: var(--warn); border-color: rgba(255,107,53,0.3); padding: 2px 6px; font-size: 0.7rem; margin-top: 4px; border-radius: 4px; border: 1px solid; line-height: 1.2; width: fit-content; text-align: center; cursor: pointer; margin-left: 4px;">Send SMS</button>`;
           
           let waStatusHtml = '';
           if (row.wa_sent && row.wa_sent.toLowerCase() !== 'not sent') {
@@ -4907,7 +4936,7 @@ Distribution of check-in arrivals over time.
           
           const hasEmail = row.email ? 'true' : 'false';
           const hasPhone = row.phone ? 'true' : 'false';
-          const sendIdBtn = `<button onclick="window.sendSingleIdCard('${escapeHtml(row.reg_no)}', ${hasEmail}, ${hasPhone})" class="view-qr-btn" style="background: rgba(139, 92, 246, 0.08); color: #8b5cf6; border-color: rgba(139, 92, 246, 0.3); padding: 4px 8px; font-size: 0.7rem; border-radius: 4px; border: 1px solid; cursor: pointer; width: auto;">Send ID</button>`;
+          const sendIdBtn = `<button onclick="window.sendSingleIdCard('${escapeJsAttr(row.reg_no)}', ${hasEmail}, ${hasPhone})" class="view-qr-btn" style="background: rgba(139, 92, 246, 0.08); color: #8b5cf6; border-color: rgba(139, 92, 246, 0.3); padding: 4px 8px; font-size: 0.7rem; border-radius: 4px; border: 1px solid; cursor: pointer; width: auto;">Send ID</button>`;
           
           let sentStatusHtml = '';
           if (row.email_sent && row.email_sent.toLowerCase() === 'sent') {
@@ -5606,14 +5635,14 @@ Distribution of check-in arrivals over time.
         d.fields.forEach((field, fIdx) => {
           bodyHtml += `
             <div style="display:flex; align-items:center; justify-content: space-between; gap:4px; flex-wrap: wrap;">
-              <span style="font-size:0.7rem; color:var(--muted); text-transform:uppercase; cursor:pointer;" onclick="editDeviceFieldLabel('${d.id}', ${fIdx}, '${escapeHtml(field.label)}')">
+              <span style="font-size:0.7rem; color:var(--muted); text-transform:uppercase; cursor:pointer;" onclick="editDeviceFieldLabel('${escapeJsAttr(d.id)}', ${fIdx}, '${escapeJsAttr(field.label)}')">
                 ${escapeHtml(field.label)}: ✏️
               </span>
               <div style="display:flex; align-items:center; gap:6px;">
                 <span style="font-weight: ${fIdx === 0 ? '700' : '500'}; color: ${fIdx === 0 ? 'var(--accent2)' : 'var(--text)'}; font-size: 0.82rem;">
                   ${escapeHtml(field.value || '(Not Set)')}
                 </span>
-                <button onclick="editDeviceFieldValue('${d.id}', ${fIdx}, '${escapeHtml(field.value || '')}')" class="view-qr-btn" style="padding: 2px 6px; font-size: 0.62rem; margin:0; border-color:var(--border); color:var(--accent);">Set</button>
+                <button onclick="editDeviceFieldValue('${escapeJsAttr(d.id)}', ${fIdx}, '${escapeJsAttr(field.value || '')}')" class="view-qr-btn" style="padding: 2px 6px; font-size: 0.62rem; margin:0; border-color:var(--border); color:var(--accent);">Set</button>
               </div>
             </div>
           `;
@@ -5624,14 +5653,14 @@ Distribution of check-in arrivals over time.
             <span style="font-size:0.7rem; color:var(--muted); text-transform:uppercase;">Location:</span>
             <div style="display:flex; align-items:center; gap:6px;">
               <span style="font-weight:700; color:var(--accent2); font-size: 0.82rem;">${escapeHtml(d.manager_label || '(Not Set)')}</span>
-              <button onclick="editManagerLabel('${d.id}', '${escapeHtml(d.manager_label || '')}')" class="view-qr-btn" style="padding: 2px 6px; font-size: 0.62rem; margin:0; border-color:rgba(0,245,160,0.3); color:var(--accent);">Set</button>
+              <button onclick="editManagerLabel('${escapeJsAttr(d.id)}', '${escapeJsAttr(d.manager_label || '')}')" class="view-qr-btn" style="padding: 2px 6px; font-size: 0.62rem; margin:0; border-color:rgba(0,245,160,0.3); color:var(--accent);">Set</button>
             </div>
           </div>
           <div style="display:flex; align-items:center; justify-content: space-between; gap:4px; flex-wrap: wrap;">
             <span style="font-size:0.7rem; color:var(--muted); text-transform:uppercase;">Operator:</span>
             <div style="display:flex; align-items:center; gap:6px;">
               <span style="font-weight:500; font-size: 0.82rem;">${escapeHtml(d.name)}</span>
-              <button onclick="editOperatorName('${d.id}', '${escapeHtml(d.name)}')" class="view-qr-btn" style="padding: 2px 6px; font-size: 0.62rem; margin:0; background:rgba(255,255,255,0.05); border-color:var(--border);">Rename</button>
+              <button onclick="editOperatorName('${escapeJsAttr(d.id)}', '${escapeJsAttr(d.name)}')" class="view-qr-btn" style="padding: 2px 6px; font-size: 0.62rem; margin:0; background:rgba(255,255,255,0.05); border-color:var(--border);">Rename</button>
             </div>
           </div>
         `;
@@ -5645,7 +5674,7 @@ Distribution of check-in arrivals over time.
             <span class="badge-status ${d.online ? 'scanned' : 'not-scanned'}" style="padding: 1px 6px; font-size: 0.62rem;">
               ${d.online ? 'Online' : 'Offline'}
             </span>
-            ${!d.online ? `<button onclick="removeDevice('${d.id}')" class="view-qr-btn" style="padding: 2px 6px; font-size: 0.62rem; margin:0; background:rgba(255, 50, 50, 0.08); color:#ff6b6b; border-color:rgba(255, 50, 50, 0.3);">Remove</button>` : ''}
+            ${!d.online ? `<button onclick="removeDevice('${escapeJsAttr(d.id)}')" class="view-qr-btn" style="padding: 2px 6px; font-size: 0.62rem; margin:0; background:rgba(255, 50, 50, 0.08); color:#ff6b6b; border-color:rgba(255, 50, 50, 0.3);">Remove</button>` : ''}
           </div>
         </div>
         
@@ -6411,10 +6440,10 @@ Distribution of check-in arrivals over time.
         </div>
         <div style="font-size: 0.68rem; color: var(--muted);">Created: ${createdAt}</div>
         <div style="display: flex; gap: 8px; flex-wrap: wrap;">
-          <button onclick="window.sendGroupEmail('${escapeHtml(group.name)}')" style="flex: 1; min-width: 90px; background: rgba(0,245,160,0.08); color: var(--accent); border: 1px solid rgba(0,245,160,0.25); border-radius: 8px; padding: 6px 8px; font-size: 0.72rem; font-weight: 700; cursor: pointer; font-family: var(--font); transition: all 0.2s;" onmouseover="this.style.background='rgba(0,245,160,0.15)'" onmouseout="this.style.background='rgba(0,245,160,0.08)'">📧 Send Email</button>
-          <button onclick="window.sendGroupWhatsapp('${escapeHtml(group.name)}')" style="flex: 1; min-width: 90px; background: rgba(0,245,160,0.08); color: var(--accent); border: 1px solid rgba(0,245,160,0.25); border-radius: 8px; padding: 6px 8px; font-size: 0.72rem; font-weight: 700; cursor: pointer; font-family: var(--font); transition: all 0.2s;" onmouseover="this.style.background='rgba(0,245,160,0.15)'" onmouseout="this.style.background='rgba(0,245,160,0.08)'">💬 Send WA</button>
-          <button onclick="window.sendGroupIdCards('${escapeHtml(group.name)}')" style="flex: 1; min-width: 90px; background: rgba(0,180,245,0.08); color: var(--accent2); border: 1px solid rgba(0,180,245,0.25); border-radius: 8px; padding: 6px 8px; font-size: 0.72rem; font-weight: 700; cursor: pointer; font-family: var(--font); transition: all 0.2s;" onmouseover="this.style.background='rgba(0,180,245,0.15)'" onmouseout="this.style.background='rgba(0,180,245,0.08)'">🪪 ID Cards</button>
-          <button onclick="window.deleteCustomGroup('${escapeHtml(group.name)}')" style="background: rgba(239,68,68,0.08); color: #ef4444; border: 1px solid rgba(239,68,68,0.2); border-radius: 8px; padding: 6px 10px; font-size: 0.72rem; cursor: pointer; font-family: var(--font); transition: all 0.2s;" onmouseover="this.style.background='rgba(239,68,68,0.15)'" onmouseout="this.style.background='rgba(239,68,68,0.08)'">🗑 Delete</button>
+          <button onclick="window.sendGroupEmail('${escapeJsAttr(group.name)}')" style="flex: 1; min-width: 90px; background: rgba(0,245,160,0.08); color: var(--accent); border: 1px solid rgba(0,245,160,0.25); border-radius: 8px; padding: 6px 8px; font-size: 0.72rem; font-weight: 700; cursor: pointer; font-family: var(--font); transition: all 0.2s;" onmouseover="this.style.background='rgba(0,245,160,0.15)'" onmouseout="this.style.background='rgba(0,245,160,0.08)'">📧 Send Email</button>
+          <button onclick="window.sendGroupWhatsapp('${escapeJsAttr(group.name)}')" style="flex: 1; min-width: 90px; background: rgba(0,245,160,0.08); color: var(--accent); border: 1px solid rgba(0,245,160,0.25); border-radius: 8px; padding: 6px 8px; font-size: 0.72rem; font-weight: 700; cursor: pointer; font-family: var(--font); transition: all 0.2s;" onmouseover="this.style.background='rgba(0,245,160,0.15)'" onmouseout="this.style.background='rgba(0,245,160,0.08)'">💬 Send WA</button>
+          <button onclick="window.sendGroupIdCards('${escapeJsAttr(group.name)}')" style="flex: 1; min-width: 90px; background: rgba(0,180,245,0.08); color: var(--accent2); border: 1px solid rgba(0,180,245,0.25); border-radius: 8px; padding: 6px 8px; font-size: 0.72rem; font-weight: 700; cursor: pointer; font-family: var(--font); transition: all 0.2s;" onmouseover="this.style.background='rgba(0,180,245,0.15)'" onmouseout="this.style.background='rgba(0,180,245,0.08)'">🪪 ID Cards</button>
+          <button onclick="window.deleteCustomGroup('${escapeJsAttr(group.name)}')" style="background: rgba(239,68,68,0.08); color: #ef4444; border: 1px solid rgba(239,68,68,0.2); border-radius: 8px; padding: 6px 10px; font-size: 0.72rem; cursor: pointer; font-family: var(--font); transition: all 0.2s;" onmouseover="this.style.background='rgba(239,68,68,0.15)'" onmouseout="this.style.background='rgba(239,68,68,0.08)'">🗑 Delete</button>
         </div>
       `;
 

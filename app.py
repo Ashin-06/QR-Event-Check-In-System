@@ -230,8 +230,15 @@ app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 app.config["SESSION_COOKIE_SECURE"] = os.environ.get("FORCE_HTTPS", "false").lower() == "true"
 app.config["PERMANENT_SESSION_LIFETIME"] = 60 * 60 * 12
 
-# Socket.IO defaults to same-origin; set CORS_ORIGIN explicitly to widen it.
-socketio = SocketIO(app, cors_allowed_origins=os.environ.get("CORS_ORIGIN", "*").split(","))
+# Socket.IO origin policy. CORS_ORIGIN accepts "*" or a comma-separated list.
+# "*" must stay a bare string: python-socketio treats the string as a wildcard
+# but compares a ["*"] list literally against the browser's Origin header,
+# which rejects every real handshake with a 400.
+_cors_origin_env = os.environ.get("CORS_ORIGIN", "*").strip()
+_cors_origins = "*" if _cors_origin_env == "*" else [
+    o.strip() for o in _cors_origin_env.split(",") if o.strip()
+]
+socketio = SocketIO(app, cors_allowed_origins=_cors_origins)
 
 
 @app.errorhandler(413)
@@ -390,6 +397,12 @@ dashboard_passcode = os.environ.get("DASHBOARD_PASSCODE") or "".join(
 _rate_store: dict[str, float] = defaultdict(float)
 _processed_idempotency_keys: dict[str, tuple[dict, int]] = {}
 RATE_LIMIT_SECONDS = 2          # minimum seconds between scans from same IP
+
+# Caps on strings arriving from unauthenticated scanner clients. These values
+# are persisted (quarantine.json) and rendered on the manager dashboard, so an
+# unbounded payload is both a disk-growth and a UI-flooding vector.
+MAX_SCAN_FIELD_LEN = 512
+MAX_DEVICE_NAME_LEN = 120
 
 
 def _is_rate_limited(ip: str, device_id: str = "unknown") -> bool:
@@ -1114,7 +1127,7 @@ def _on_register_dashboard(data):
 @socketio.on("rename_device")
 def _on_rename_device(data):
     device_id = data.get("device_id")
-    new_name = data.get("name", "").strip()
+    new_name = str(data.get("name", "") or "").strip()[:MAX_DEVICE_NAME_LEN]
     if not device_id or not new_name:
         return
     with _devices_lock:
@@ -1944,9 +1957,14 @@ def scan():
         return jsonify(message="Request must be JSON."), 415
 
     payload = request.json or {}
-    qr_data = payload.get("qr_data", "").strip()
-    device_id = payload.get("device_id", "unknown").strip()
-    idempotency_key = payload.get("idempotency_key", "").strip()
+    # /scan is deliberately unauthenticated so volunteer phones can post to it,
+    # which makes it the one endpoint an untrusted caller can reach. Coerce to
+    # str (a JSON object here would raise AttributeError on .strip() and 500)
+    # and bound the length: unregistered payloads are persisted to
+    # quarantine.json and rendered on the manager dashboard.
+    qr_data = str(payload.get("qr_data", "") or "").strip()[:MAX_SCAN_FIELD_LEN]
+    device_id = str(payload.get("device_id", "unknown") or "unknown").strip()[:MAX_DEVICE_NAME_LEN]
+    idempotency_key = str(payload.get("idempotency_key", "") or "").strip()[:128]
 
     if not qr_data:
         return jsonify(message="No QR data provided."), 400

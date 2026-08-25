@@ -398,3 +398,86 @@ operator's own machine keeps working with no passcode.
 * **The reverse SSH tunnel exposes the server to the public internet.** With
   sharing set to `public`, that means no passcode at all — the mode now writes
   a security audit entry when enabled.
+
+---
+
+## 🧭 9. Full-Codebase Audit Pass (2026-08-25)
+
+The first pass covered `app.py`. This pass covered everything else: the two
+frontend templates and all six auxiliary scripts.
+
+### 9.1 Stored XSS in the Manager Control Center
+
+The most serious finding in the project. `/scan` is unauthenticated by design
+so volunteer phones can post to it, and an unrecognised payload is persisted
+verbatim to `quarantine.json`, then rendered by the manager dashboard into an
+inline event handler:
+
+```
+onclick="approveQuarantine('${item.id}', '${escapeHtml(item.qr_data)}')"
+```
+
+`escapeHtml()` did not escape the apostrophe, so a scanned payload of
+`X'); alert(document.cookie); //` closed the JS string literal and executed in
+the operator's authenticated session. Reachable by anyone who can reach the
+scanner endpoint — including over the public tunnel.
+
+```mermaid
+flowchart LR
+    A[Attacker crafts QR payload] -->|POST /scan, unauthenticated| B[quarantine.json\nstored verbatim]
+    B --> C[Manager opens Quarantine panel]
+    C --> D["onclick=&quot;approveQuarantine('PAYLOAD')&quot;"]
+    D --> E[JS string closed early\narbitrary script in operator session]
+```
+
+**Escaping for HTML is not sufficient in this position.** The browser decodes
+HTML entities *before* the JS parser sees the attribute, so escaping the quote
+as `&#39;` decodes straight back to a bare quote and still breaks out. The fix
+adds `escapeJsAttr()`, which escapes for the JS string literal first
+(`\` → `\\`, `'` → `\'`, newlines) and then for the HTML attribute
+(`&`, `"`, `<`, `>`). The browser undoes the outer layer and hands the parser a
+correctly-escaped literal.
+
+Verified in a real browser: the payload now renders as
+`approveQuarantine('Q277464', 'X\'); alert(document.cookie); //')`, no script
+executes, and the handler still receives the original string byte-for-byte, so
+approving a genuinely odd QR code keeps working.
+
+### 9.2 Complete Changelog — Audit Pass
+
+| # | Component | Problem / Symptom | Root Cause | Solution & Architectural Fix | Status |
+|---|---|---|---|---|---|
+| **32** | **Dashboard (XSS)** | A crafted QR code scanned at the gate executed arbitrary JavaScript in the manager's authenticated dashboard session | 17 inline event handlers interpolated untrusted values into JS string literals. `escapeHtml()` did not escape `'`, and HTML entity escaping cannot protect this position anyway — entities are decoded before the JS parser runs. | Added `escapeJsAttr()` (JS-escape then attribute-escape) and applied it at all 17 handler sites. Sources included scanned QR payloads, imported roster names, scanner-supplied device names and group names. | ✅ Fixed |
+| **33** | **Dashboard (XSS)** | Roster names and statuses rendered unescaped into the global search dropdown | Six interpolations reached `innerHTML` without escaping. | Wrapped in `escapeHtml()`. | ✅ Fixed |
+| **34** | **Both templates** | `escapeHtml()` left `'` and `` ` `` intact | Incomplete escape set. | Both templates now escape `&`, `<`, `>`, `"`, `'` and `` ` ``. The scanner copy also coerces with `String()` — callers pass numbers, and `.replace()` is not a method on a number. | ✅ Fixed |
+| **35** | **Socket.IO (regression)** | Every WebSocket handshake failed with 400; the dashboard silently lost all real-time updates and fell back to polling | Introduced by the previous hardening pass: `CORS_ORIGIN` defaulted to `"*"` but was passed through `.split(",")`, producing `["*"]`. python-socketio treats the bare string as a wildcard but compares a list literally against the browser's `Origin` header. It went unnoticed because `curl` sends no `Origin` and so was allowed. | `"*"` is kept as a bare string; only an explicit comma-separated value becomes a list. Verified in-browser: transport upgrades to `websocket`. | ✅ Fixed |
+| **36** | **/scan endpoint** | A JSON object in place of a string returned HTTP 500 | `payload.get("qr_data", "").strip()` raises `AttributeError` on a non-string. | Coerced with `str()` before stripping; malformed input now returns 400. | ✅ Fixed |
+| **37** | **/scan endpoint** | Unbounded strings from the one unauthenticated endpoint were persisted and rendered | No length limits on `qr_data` or `device_id`, and none on socket device renames. | Capped at 512 / 120 characters (`MAX_SCAN_FIELD_LEN`, `MAX_DEVICE_NAME_LEN`), applied to `/scan` and the `rename_device` socket handler. | ✅ Fixed |
+| **38** | **Repair scripts** | `remove_duplicates.py` and `repair_dashboard.py` rewrite `app.py` / `dashboard.html` in place, with no backup, at hardcoded line offsets from a much older revision — running either would silently destroy hundreds of lines of working code | One-shot migrations left in the project root with nothing preventing re-execution. | Both now refuse to run and explain why, unless `RUN_ONE_SHOT_REPAIR=yes` is set. Kept rather than deleted so the provenance of past fixes survives. | ✅ Fixed |
+| **39** | **qrsendemail.py** | The retry loop slept after its *final* failed attempt, stalling a bulk run by up to 8 seconds per unreachable recipient for no benefit | Backoff applied unconditionally inside the `except`. | The final attempt breaks without sleeping. | ✅ Fixed |
+| **40** | **qrsendemail.py** | An exception mid-run leaked the SMTP connection — `yag.close()` sat after the loop and was skipped | No `try`/`finally`. | The send loop is wrapped so the connection is always released. | ✅ Fixed |
+
+### 9.3 Audited and Found Clean
+
+* **`templates/index.html`** — every untrusted value already escaped; no inline
+  handlers interpolate data. Only the `escapeHtml()` hardening above applied.
+* **`qradding.py`** — argparse-driven, correct `get_column_letter()` usage.
+* **`download_assets.py`**, **`search_sockets.py`** — no issues found.
+
+### 9.4 Verification
+
+| Suite | Result |
+|---|---|
+| `test_upgrades.py` | 11/11 passed |
+| `scratch/test_e2e_audit.py` | 0 errors, 0 warnings |
+| `scratch/test_phone_cases.py` | passing |
+| `scratch/test_id_themes.py` | 11/11 rendered |
+| Live browser (XSS payload) | inert; handler still receives the exact original string |
+| Live browser (Socket.IO) | connected, transport `websocket` |
+| Auth spot-check | `/registry`, `/get_config`, `/dashboard_sharing_info` → 401 from non-localhost |
+
+> **Note on `scratch/test_id_themes.py`:** its "11/11" is not meaningful. It
+> passes HTML-*template* names into the `theme=` parameter, which only maps to
+> the PIL theme set, so all eleven fall through to the same fallback and emit
+> byte-identical output. The HTML templates themselves do render correctly
+> through the designer path — that was verified separately.

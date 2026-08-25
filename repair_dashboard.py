@@ -4,6 +4,29 @@ Fixes:
   1. Corrupted lines 5310-5337 (0-indexed 5309-5336) - mid-function splice + invalid byte
   2. Duplicate/old forceQuarantineSelected at ~line 5446-5474
 """
+
+# ─────────────────────────────────────────────────────────────────────────────
+# ONE-SHOT MIGRATION — ALREADY APPLIED. DO NOT RUN AGAIN.
+#
+# This script rewrites templates/dashboard.html IN PLACE, with no backup, using line
+# offsets captured from the file as it stood when the script was written. The
+# file has changed substantially since then, so re-running it would delete or
+# mangle unrelated working code.
+#
+# It is kept for provenance only. To run it anyway (you almost certainly do not
+# want to), set: RUN_ONE_SHOT_REPAIR=yes
+# ─────────────────────────────────────────────────────────────────────────────
+import os as _os
+import sys as _sys
+
+if _os.environ.get("RUN_ONE_SHOT_REPAIR", "").lower() not in ("yes", "true", "1"):
+    print(__doc__)
+    print("REFUSING TO RUN: this one-shot repair has already been applied and would")
+    print("corrupt the current templates/dashboard.html.")
+    print("Set RUN_ONE_SHOT_REPAIR=yes to override.")
+    _sys.exit(0)
+
+
 import re
 
 # Read file with error replacement

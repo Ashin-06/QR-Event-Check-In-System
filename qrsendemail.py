@@ -76,47 +76,55 @@ def send_all(args: argparse.Namespace) -> None:
 
     sent = skipped = failed = 0
 
-    for _, row in df.iterrows():
-        recipient = str(row[EMAIL_COL]).strip()
-        name      = str(row[NAME_COL]).strip()
-        reg       = str(row[REG_COL]).strip().upper()
-        qr_file   = os.path.join(args.qr_dir, f"{reg}.png")
+    try:
+        for _, row in df.iterrows():
+            recipient = str(row[EMAIL_COL]).strip()
+            name      = str(row[NAME_COL]).strip()
+            reg       = str(row[REG_COL]).strip().upper()
+            qr_file   = os.path.join(args.qr_dir, f"{reg}.png")
 
-        if not os.path.exists(qr_file):
-            print(f"⚠️   QR not found for {name} ({reg}) — skipped.")
-            skipped += 1
-            continue
+            if not os.path.exists(qr_file):
+                print(f"⚠️   QR not found for {name} ({reg}) — skipped.")
+                skipped += 1
+                continue
 
-        body = (
-            f"Hi {name},\n\n"
-            f"Please find your QR Code attached. Present it at the entrance of {args.event}.\n\n"
-            f"Do not share this QR code with others — it is unique to your registration.\n\n"
-            f"Regards,\nEvent Team"
-        )
+            body = (
+                f"Hi {name},\n\n"
+                f"Please find your QR Code attached. Present it at the entrance of {args.event}.\n\n"
+                f"Do not share this QR code with others — it is unique to your registration.\n\n"
+                f"Regards,\nEvent Team"
+            )
 
-        success = False
-        for attempt in range(1, args.retries + 1):
-            try:
-                yag.send(
-                    to=recipient,
-                    subject=args.subject,
-                    contents=body,
-                    attachments=qr_file,
-                )
-                print(f"✅  Sent → {recipient}")
-                sent += 1
-                success = True
-                break
-            except Exception as e:
-                wait = 2 ** attempt
-                print(f"   Attempt {attempt} failed for {recipient}: {e}. Retrying in {wait}s…")
-                time.sleep(wait)
+            success = False
+            for attempt in range(1, args.retries + 1):
+                try:
+                    yag.send(
+                        to=recipient,
+                        subject=args.subject,
+                        contents=body,
+                        attachments=qr_file,
+                    )
+                    print(f"✅  Sent → {recipient}")
+                    sent += 1
+                    success = True
+                    break
+                except Exception as e:
+                    # Don't back off after the final attempt — there is nothing
+                    # left to retry, and the sleep just stalls the whole run.
+                    if attempt == args.retries:
+                        print(f"   Attempt {attempt} failed for {recipient}: {e}")
+                        break
+                    wait = 2 ** attempt
+                    print(f"   Attempt {attempt} failed for {recipient}: {e}. Retrying in {wait}s…")
+                    time.sleep(wait)
 
-        if not success:
-            print(f"❌  Failed → {recipient} after {args.retries} attempts.")
-            failed += 1
+            if not success:
+                print(f"❌  Failed → {recipient} after {args.retries} attempts.")
+                failed += 1
 
-    yag.close()
+    finally:
+        # Always release the SMTP connection, even if a row raises.
+        yag.close()
 
     print(f"\n── Summary ──────────────────")
     print(f"   Sent:    {sent}")

@@ -3,6 +3,29 @@ Remove duplicate routes block from app.py
 Lines 5320-5871 (1-indexed) are duplicate routes that appear again after line 5322
 """
 
+# ─────────────────────────────────────────────────────────────────────────────
+# ONE-SHOT MIGRATION — ALREADY APPLIED. DO NOT RUN AGAIN.
+#
+# This script rewrites app.py IN PLACE, with no backup, using line
+# offsets captured from the file as it stood when the script was written. The
+# file has changed substantially since then, so re-running it would delete or
+# mangle unrelated working code.
+#
+# It is kept for provenance only. To run it anyway (you almost certainly do not
+# want to), set: RUN_ONE_SHOT_REPAIR=yes
+# ─────────────────────────────────────────────────────────────────────────────
+import os as _os
+import sys as _sys
+
+if _os.environ.get("RUN_ONE_SHOT_REPAIR", "").lower() not in ("yes", "true", "1"):
+    print(__doc__)
+    print("REFUSING TO RUN: this one-shot repair has already been applied and would")
+    print("corrupt the current app.py.")
+    print("Set RUN_ONE_SHOT_REPAIR=yes to override.")
+    _sys.exit(0)
+
+
+
 with open('app.py', encoding='utf-8') as f:
     lines = f.readlines()
 

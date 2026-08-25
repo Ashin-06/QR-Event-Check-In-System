@@ -1074,8 +1074,16 @@
 
   // Helper to escape HTML safely
   function escapeHtml(str) {
-    if (!str) return '';
-    return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    if (str === null || str === undefined || str === '') return '';
+    // String() coercion: callers pass numbers (scan counts) as well as text,
+    // and .replace() is not a method on a number.
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;')
+      .replace(/`/g, '&#96;');
   }
 
   // Get device browser/OS info
