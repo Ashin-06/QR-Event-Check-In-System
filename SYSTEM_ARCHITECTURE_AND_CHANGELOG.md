@@ -388,13 +388,11 @@ operator's own machine keeps working with no passcode.
 
 ### 8.4 Known Limitations
 
-* **Socket.IO broadcasts are not access-controlled.** Scanner phones must be
-  able to connect without a passcode, and check-in events are broadcast to all
-  connected clients — so a client on the same network can observe live scan
-  names. Gating this requires separate scanner and manager credentials.
-* **Messaging credentials are stored in plaintext** in each event's
-  `config.json` and are round-tripped through the dashboard form. They are now
-  reachable only by an authorised operator, but they are not encrypted at rest.
+* ~~**Socket.IO broadcasts are not access-controlled.**~~ **RESOLVED** in
+  section 10.1 — connections are now sorted into `managers` / `scanners`
+  rooms and manager-only events no longer reach the scanner tier.
+* ~~**Messaging credentials are stored in plaintext.**~~ **RESOLVED** in
+  section 10.2 — encrypted at rest with Fernet and never sent to the browser.
 * **The reverse SSH tunnel exposes the server to the public internet.** With
   sharing set to `public`, that means no passcode at all — the mode now writes
   a security audit entry when enabled.
@@ -481,3 +479,120 @@ approving a genuinely odd QR code keeps working.
 > the PIL theme set, so all eleven fall through to the same fallback and emit
 > byte-identical output. The HTML templates themselves do render correctly
 > through the designer path — that was verified separately.
+
+---
+
+## 🛡️ 10. Closing the Two Known Limitations (2026-08-25)
+
+Sections 8.4 and 9 left two items open because each needed a design decision
+rather than a patch. Both are now closed.
+
+### 10.1 Socket.IO Access Tiers
+
+**The constraint.** The transport could not simply be gated: volunteer scanner
+phones must connect without a passcode, or nobody gets checked in. But every
+connected client was receiving every broadcast — including the public tunnel
+URL, campaign progress, and quarantine/registry changes.
+
+**The decision.** Sort connections into two rooms at handshake time and route
+each event to the tier that actually needs it.
+
+```mermaid
+flowchart TB
+    C[Socket handshake] --> Q{Authenticated session\nor localhost?}
+    Q -->|yes| M[room: managers]
+    Q -->|no| S[room: scanners]
+
+    subgraph ManagerOnly [Manager-only events - 38 call sites]
+        E1[registry_updated]
+        E2[quarantine_updated]
+        E3[groups_updated]
+        E4[email / whatsapp / sms progress]
+        E5[tunnel_status_update - public URL]
+        E6[sharing_updated]
+    end
+
+    subgraph Operational [Operational events - both tiers]
+        O1[scan_alert]
+        O2[row_updated]
+        O3[stats_updated]
+        O4[devices_updated]
+        O5[clients_count]
+    end
+
+    ManagerOnly --> M
+    Operational --> M
+    Operational --> S
+```
+
+Check-in results still reach the scanner tier: a gate operator sees the guest's
+name on their own screen anyway, and multi-gate awareness is intentional. What
+the scanner tier no longer receives is anything about the *management* of the
+event.
+
+For venues that need the remaining eavesdrop path closed too, the new
+`require_scanner_auth` config flag puts the scanner client and `/scan` behind
+the same passcode. It is **off by default**, because switching it on means
+every volunteer phone needs the code before it can check anyone in.
+
+Verified with two live socket clients — one unauthenticated (remote `Host`),
+one localhost:
+
+| Tier | Events received after an unregistered scan |
+|---|---|
+| scanner | `devices_updated` |
+| manager | `devices_updated`, `quarantine_updated` |
+
+Manager-only events leaked to the scanner tier: **none**. The real dashboard
+was confirmed in-browser to sit in the manager tier over a `websocket`
+transport, and the scanner page still loads and calls `/stats` and
+`/network_info` with zero JS errors.
+
+### 10.2 Credential Encryption at Rest
+
+**The problem.** SMTP app passwords, Twilio auth tokens, the Meta access token
+and the QR signing key sat in each event's `config.json` as plaintext. Anyone
+with read access to the events folder — a backup, a synced drive, a support
+copy of an event directory — had working credentials. The dashboard also
+round-tripped them through the browser on every settings save.
+
+**The decision.** Encrypt at rest, and stop sending secrets to the browser at
+all.
+
+* Values are stored as `enc:v1:<token>`, encrypted with **Fernet**
+  (AES-128-CBC + HMAC-SHA256) under a key in `.credentials_key` (0600, outside
+  the event folders, git-ignored, overridable via `CREDENTIALS_KEY`).
+* Anything without the prefix is treated as legacy plaintext and transparently
+  re-encrypted on the next save, so existing events keep working with no
+  migration step.
+* `/get_config` returns `SECRET_MASK` in place of any stored secret, and never
+  returns the signing key at all.
+* A masked value coming back on `/save_config` or a campaign request means
+  *"keep what is stored"* — so a secret can never be clobbered by the
+  placeholder the browser was shown.
+* In the dashboard, a stored credential renders as an **empty field with a
+  "Saved — leave blank to keep unchanged" hint**. Submitting it untouched sends
+  the mask; typing a new value replaces it.
+
+Verified end-to-end:
+
+| Check | Result |
+|---|---|
+| Value on disk | `enc:v1:gAAAAABqjRyd…` (ciphertext) |
+| Value over the wire (`/get_config`) | `"__STORED_SECRET__"` |
+| `event_signing_key` over the wire | absent entirely |
+| Server-side read (`get_event_config()`) | `'hunter2-secret'` — decrypts correctly |
+| Re-save with the mask | credential unchanged, other fields updated |
+
+> **Operational note:** `.credentials_key` must travel with your backups. Losing
+> it does not corrupt anything, but the stored messaging credentials become
+> unreadable and have to be re-entered.
+
+### 10.3 Changelog
+
+| # | Component | Problem / Symptom | Root Cause | Solution & Architectural Fix | Status |
+|---|---|---|---|---|---|
+| **41** | **Socket.IO** | Every connected client — including any device that could reach the scanner page — received the public tunnel URL, campaign progress, and quarantine/registry/group activity | Broadcasts went to all connected sockets; the transport had no notion of privilege because scanner phones must connect without a passcode. | Two-room model assigned at handshake (`managers` / `scanners`); 38 manager-only emit sites rerouted through `_emit_managers()`. Operational check-in events still reach both tiers. | ✅ Fixed |
+| **42** | **Socket.IO** | No way to lock down the scanner side at all | Scanner endpoints were unconditionally public. | Added the `require_scanner_auth` config flag (default off) which puts the scanner client and `/scan` behind the passcode. | ✅ Fixed |
+| **43** | **Credentials** | SMTP password, Twilio tokens, Meta token and the QR signing key stored as plaintext in `config.json` | No encryption layer; the config dict was serialised verbatim. | Fernet encryption at rest under a git-ignored `.credentials_key`, with transparent decryption for server-side use and automatic upgrade of legacy plaintext. | ✅ Fixed |
+| **44** | **Credentials** | Secrets were sent to the browser and re-submitted on every settings save | The dashboard prefilled password inputs from `/get_config`. | Secrets leave the server only as `SECRET_MASK`; a masked submission means "unchanged". Dashboard shows a blank field with a "saved" hint instead. | ✅ Fixed |

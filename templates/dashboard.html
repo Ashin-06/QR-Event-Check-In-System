@@ -2664,6 +2664,19 @@ Distribution of check-in arrivals over time.
 
 
   // Helper to escape HTML safely
+  // Credential fields hold no real secret: /get_config sends SECRET_MASK when
+  // one is stored, and the field is rendered blank with a 'saved' hint.
+  // secretValue() sends the mask back for an untouched field, which the server
+  // resolves to the stored credential.
+  window.SECRET_MASK = '__STORED_SECRET__';
+  window.secretValue = function(id) {
+    const el = document.getElementById(id);
+    if (!el) return '';
+    const typed = (el.value || '').trim();
+    if (typed) return typed;
+    return el.dataset.hasStored ? window.SECRET_MASK : '';
+  };
+
   function escapeHtml(str) {
     if (!str) return '';
     return String(str)
@@ -3104,9 +3117,27 @@ Distribution of check-in arrivals over time.
           updateIDCardPreview();
         }
 
+        // Secrets never leave the server. /get_config sends SECRET_MASK when a
+        // credential is stored, so show an empty field with a 'saved' hint
+        // instead of the placeholder text. Submitting it blank keeps the
+        // stored value; typing a new one replaces it.
+        function fillSecret(id, val) {
+          const el = document.getElementById(id);
+          if (!el) return;
+          if (val === window.SECRET_MASK) {
+            el.value = '';
+            el.placeholder = 'Saved — leave blank to keep unchanged';
+            el.dataset.hasStored = '1';
+          } else {
+            el.value = val || '';
+            el.placeholder = el.dataset.origPlaceholder || el.placeholder || '';
+            delete el.dataset.hasStored;
+          }
+        }
+
         // Pre-fill Bulk Email Campaign inputs
         if (document.getElementById('email-sender')) document.getElementById('email-sender').value = cfg.email_sender || '';
-        if (document.getElementById('email-password')) document.getElementById('email-password').value = cfg.email_password || '';
+        fillSecret('email-password', cfg.email_password);
         if (document.getElementById('email-subject')) document.getElementById('email-subject').value = cfg.email_subject || '';
         if (document.getElementById('email-event')) document.getElementById('email-event').value = cfg.event_name_template || '';
 
@@ -3116,10 +3147,10 @@ Distribution of check-in arrivals over time.
           document.getElementById('wa-provider').dispatchEvent(new Event('change'));
         }
         if (document.getElementById('wa-sid')) document.getElementById('wa-sid').value = cfg.twilio_sid || '';
-        if (document.getElementById('wa-token')) document.getElementById('wa-token').value = cfg.twilio_token || '';
+        fillSecret('wa-token', cfg.twilio_token);
         if (document.getElementById('wa-sender')) document.getElementById('wa-sender').value = cfg.twilio_sender || '';
 
-        if (document.getElementById('meta-token')) document.getElementById('meta-token').value = cfg.meta_access_token || '';
+        fillSecret('meta-token', cfg.meta_access_token);
         if (document.getElementById('meta-phone-id')) document.getElementById('meta-phone-id').value = cfg.meta_phone_number_id || '';
         if (document.getElementById('meta-template-name')) document.getElementById('meta-template-name').value = cfg.meta_template_name || '';
         if (document.getElementById('meta-lang-code')) document.getElementById('meta-lang-code').value = cfg.meta_language_code || 'en_US';
@@ -4207,7 +4238,7 @@ Distribution of check-in arrivals over time.
   document.getElementById('send-emails-form').addEventListener('submit', (e) => {
     e.preventDefault();
     const sender_email = document.getElementById('email-sender').value.trim();
-    const app_password = document.getElementById('email-password').value.trim();
+    const app_password = window.secretValue('email-password');
     const subject = document.getElementById('email-subject').value.trim();
     const event_name = document.getElementById('email-event').value.trim();
     const target_column = document.getElementById('email-target-col').value;
@@ -4315,7 +4346,7 @@ Distribution of check-in arrivals over time.
   if (saveSmtpBtn) {
     saveSmtpBtn.addEventListener('click', () => {
       const sender = document.getElementById('email-sender').value.trim();
-      const password = document.getElementById('email-password').value.trim();
+      const password = window.secretValue('email-password');
       const subject = document.getElementById('email-subject').value.trim();
       const event = document.getElementById('email-event').value.trim();
       
@@ -4365,7 +4396,7 @@ Distribution of check-in arrivals over time.
       };
       
       if (provider === 'meta') {
-        payload.meta_access_token = document.getElementById('meta-token').value.trim();
+        payload.meta_access_token = window.secretValue('meta-token');
         payload.meta_phone_number_id = document.getElementById('meta-phone-id').value.trim();
         payload.meta_template_name = document.getElementById('meta-template-name').value.trim();
         payload.meta_language_code = document.getElementById('meta-lang-code').value.trim();
@@ -4376,7 +4407,7 @@ Distribution of check-in arrivals over time.
         }
       } else if (provider === 'twilio') {
         payload.twilio_sid = document.getElementById('wa-sid').value.trim();
-        payload.twilio_token = document.getElementById('wa-token').value.trim();
+        payload.twilio_token = window.secretValue('wa-token');
         payload.twilio_sender = document.getElementById('wa-sender').value.trim();
         
         if (!payload.twilio_sid || !payload.twilio_token || !payload.twilio_sender) {
@@ -4429,7 +4460,7 @@ Distribution of check-in arrivals over time.
     };
     
     if (provider === 'meta') {
-      payload.meta_access_token = document.getElementById('meta-token').value.trim();
+      payload.meta_access_token = window.secretValue('meta-token');
       payload.meta_phone_number_id = document.getElementById('meta-phone-id').value.trim();
       payload.meta_template_name = document.getElementById('meta-template-name').value.trim();
       payload.meta_language_code = document.getElementById('meta-lang-code').value.trim();
@@ -4440,7 +4471,7 @@ Distribution of check-in arrivals over time.
       }
     } else if (provider === 'twilio') {
       payload.twilio_sid = document.getElementById('wa-sid').value.trim();
-      payload.twilio_token = document.getElementById('wa-token').value.trim();
+      payload.twilio_token = window.secretValue('wa-token');
       payload.twilio_sender = document.getElementById('wa-sender').value.trim();
       
       if (!payload.twilio_sid || !payload.twilio_token || !payload.twilio_sender) {

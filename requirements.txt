@@ -17,6 +17,10 @@ Pillow>=10.0.0
 # through a headless Chrome screenshot. The PIL themes work without it.
 html2image>=2.0.4
 
+# ── Credential vault ─────────────────────────────────────────────────────────
+# Encrypts messaging credentials at rest in each event's config.json.
+cryptography>=42.0.0
+
 # ── Outbound channels ────────────────────────────────────────────────────────
 requests>=2.31.0
 yagmail>=0.15.0

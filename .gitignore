@@ -30,3 +30,4 @@ results.txt
 
 # Persisted Flask session signing key — never commit
 .secret_key
+.credentials_key

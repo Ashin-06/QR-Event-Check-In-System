@@ -284,10 +284,20 @@ PUBLIC_ENDPOINTS = {
 }
 
 
+# Endpoints that stop being public once require_scanner_auth is enabled.
+SCANNER_ENDPOINTS = {"index", "scan", "stats", "network_info"}
+
+
 @app.before_request
 def _require_dashboard_auth():
     endpoint = request.endpoint
-    if endpoint is None or endpoint in PUBLIC_ENDPOINTS:
+    if endpoint in SCANNER_ENDPOINTS:
+        try:
+            if not get_event_config().get("require_scanner_auth", False):
+                return None
+        except Exception:
+            return None                    # never lock the gate out on a config error
+    elif endpoint is None or endpoint in PUBLIC_ENDPOINTS:
         return None
     # Socket.IO negotiates over its own transport endpoint.
     if request.path.startswith("/socket.io"):
@@ -417,6 +427,134 @@ def _is_rate_limited(ip: str, device_id: str = "unknown") -> bool:
 
 
 # ── Load / initialise log ─────────────────────────────────────────────────────
+# ── Credential vault ─────────────────────────────────────────────────────────
+# Messaging credentials (SMTP app password, Twilio auth tokens, Meta access
+# token) and the QR signing key used to live in each event's config.json as
+# plaintext. Anyone with read access to the events folder — a backup, a synced
+# drive, a support copy of the event directory — got working credentials.
+#
+# They are now encrypted at rest with Fernet (AES-128-CBC + HMAC-SHA256) under
+# a key held outside the event folders. Values are stored as "enc:v1:<token>";
+# anything without that prefix is treated as legacy plaintext and transparently
+# upgraded on the next save, so existing events keep working.
+SECRET_CONFIG_KEYS = {
+    "email_password",
+    "twilio_token",
+    "twilio_sms_token",
+    "meta_access_token",
+    "event_signing_key",
+}
+
+# Sentinel handed to the browser in place of a stored secret. When it comes
+# back on a save or a campaign request it means "keep what is already stored",
+# so the dashboard never has to hold the real value to re-submit a form.
+SECRET_MASK = "__STORED_SECRET__"
+
+_ENC_PREFIX = "enc:v1:"
+_cred_key_lock = threading.Lock()
+_cred_fernet = None
+
+
+def _get_cred_cipher():
+    """Return the shared Fernet cipher, creating/loading its key on first use."""
+    global _cred_fernet
+    with _cred_key_lock:
+        if _cred_fernet is not None:
+            return _cred_fernet
+        try:
+            from cryptography.fernet import Fernet
+        except ImportError:
+            print("[vault] 'cryptography' not installed — credentials will remain "
+                  "in plaintext. Install it with: pip install cryptography")
+            return None
+
+        env_key = os.environ.get("CREDENTIALS_KEY")
+        key_path = os.path.join(BASE_DIR, ".credentials_key")
+        key = None
+        if env_key:
+            key = env_key.encode()
+        elif os.path.exists(key_path):
+            try:
+                key = open(key_path, "rb").read().strip()
+            except Exception as e:
+                print(f"[vault] Could not read {key_path}: {e}")
+        if not key:
+            key = Fernet.generate_key()
+            try:
+                with open(key_path, "wb") as f:
+                    f.write(key)
+                try:
+                    os.chmod(key_path, 0o600)
+                except Exception:
+                    pass
+                print("[vault] Generated a new credential key at .credentials_key "
+                      "(keep it with your backups — losing it means re-entering "
+                      "the messaging credentials)")
+            except Exception as e:
+                print(f"[vault] Could not persist credential key ({e}); "
+                      "credentials will not survive a restart.")
+        try:
+            _cred_fernet = Fernet(key)
+        except Exception as e:
+            print(f"[vault] Invalid credential key ({e}); storing in plaintext.")
+            _cred_fernet = None
+        return _cred_fernet
+
+
+def _encrypt_secret(value: str) -> str:
+    """Encrypt a config secret for storage. Returns the value unchanged on failure."""
+    if not value or not isinstance(value, str):
+        return value
+    if value.startswith(_ENC_PREFIX):
+        return value                      # already encrypted
+    cipher = _get_cred_cipher()
+    if cipher is None:
+        return value
+    try:
+        return _ENC_PREFIX + cipher.encrypt(value.encode("utf-8")).decode("ascii")
+    except Exception as e:
+        print(f"[vault] Encrypt failed: {e}")
+        return value
+
+
+def _decrypt_secret(value: str) -> str:
+    """Decrypt a stored config secret. Legacy plaintext is passed straight through."""
+    if not value or not isinstance(value, str) or not value.startswith(_ENC_PREFIX):
+        return value
+    cipher = _get_cred_cipher()
+    if cipher is None:
+        return ""
+    try:
+        return cipher.decrypt(value[len(_ENC_PREFIX):].encode("ascii")).decode("utf-8")
+    except Exception as e:
+        print(f"[vault] Decrypt failed (wrong or missing .credentials_key?): {e}")
+        return ""
+
+
+def resolve_secret(submitted: str, cfg: dict, key: str) -> str:
+    """
+    Resolve a credential arriving from the browser.
+
+    The dashboard receives SECRET_MASK instead of the real value, so a blank or
+    masked submission means "use what is already stored" rather than "clear it".
+    """
+    submitted = (submitted or "").strip()
+    if not submitted or submitted == SECRET_MASK:
+        return (cfg or {}).get(key, "") or ""
+    return submitted
+
+
+def redact_config(cfg: dict) -> dict:
+    """Return a copy of the config safe to hand to the browser."""
+    safe = dict(cfg)
+    for key in SECRET_CONFIG_KEYS:
+        if key in _CONFIG_SERVER_ONLY_KEYS:
+            safe.pop(key, None)
+        elif safe.get(key):
+            safe[key] = SECRET_MASK
+    return safe
+
+
 # ── Event Config Loader / Saver ───────────────────────────────────────────────
 def get_event_config() -> dict:
     config_file = get_config_file()
@@ -470,6 +608,10 @@ def get_event_config() -> dict:
         "scan_notify_whatsapp": False,
         "scan_notify_sms": False,
         "enforce_localhost_auth": False,
+        # When true, the scanner client and /scan also require the passcode.
+        # Off by default: volunteer phones at a venue would otherwise each need
+        # the code before they could check anyone in.
+        "require_scanner_auth": False,
         "cryptographic_qr_verification": False,
         "event_signing_key": "",
         "allowed_country_codes": "91"
@@ -486,6 +628,11 @@ def get_event_config() -> dict:
         except Exception:
             pass
             
+    # Decrypt stored credentials for server-side use.
+    for _sk in SECRET_CONFIG_KEYS:
+        if cfg.get(_sk):
+            cfg[_sk] = _decrypt_secret(cfg[_sk])
+
     # Auto-generate signing key if empty
     if not cfg.get("event_signing_key"):
         import secrets
@@ -497,8 +644,14 @@ def get_event_config() -> dict:
 def save_event_config(cfg: dict):
     config_file = get_config_file()
     try:
+        # Encrypt credentials on the way to disk. The in-memory dict keeps the
+        # plaintext so the caller can carry on using it.
+        to_write = dict(cfg)
+        for _sk in SECRET_CONFIG_KEYS:
+            if to_write.get(_sk):
+                to_write[_sk] = _encrypt_secret(to_write[_sk])
         with open(config_file, "w", encoding="utf-8") as f:
-            json.dump(cfg, f, indent=4)
+            json.dump(to_write, f, indent=4)
     except Exception as e:
         print(f"[config] Error saving config: {e}")
 
@@ -603,7 +756,7 @@ def _quarantine_scan(qr_data: str, device_name: str, reason: str):
     try:
         with open(q_file, "w", encoding="utf-8") as f:
             json.dump(q_scans, f, indent=4)
-        socketio.emit("quarantine_updated", {})
+        _emit_managers("quarantine_updated", {})
     except Exception as ex:
         print(f"[quarantine] Error saving quarantine list: {ex}")
 
@@ -1025,6 +1178,40 @@ def _emit_clients_count():
 
 
 # ── Socket.IO connect / disconnect tracking ───────────────────────────────────
+# ── Socket.IO access tiers ───────────────────────────────────────────────────
+# Scanner phones must be able to connect without a passcode, so the socket
+# transport cannot simply be gated wholesale. Instead connections are sorted
+# into two rooms at handshake time:
+#
+#   managers  — authenticated operators (session cookie, or localhost). Receive
+#               everything, including the public tunnel URL, campaign progress
+#               and quarantine/registry/group changes.
+#   scanners  — everyone else. Receive only what a gate device needs to do its
+#               job: check-in results, live counts and the device roster.
+#
+# Set "require_scanner_auth" in the event config to also put the scanner page
+# itself behind the passcode, which closes the remaining eavesdrop path for
+# venues that need it.
+MANAGER_ROOM = "managers"
+SCANNER_ROOM = "scanners"
+
+
+def _socket_is_manager() -> bool:
+    """Classify a socket handshake. Never raises — a failure means 'not a manager'."""
+    try:
+        return bool(is_dashboard_authorized())
+    except Exception:
+        try:
+            return session.get("dashboard_authorized") is True
+        except Exception:
+            return False
+
+
+def _emit_managers(event: str, data=None) -> None:
+    """Emit an event only to authenticated operator dashboards."""
+    socketio.emit(event, data, room=MANAGER_ROOM)
+
+
 @socketio.on("connect")
 def _on_connect():
     global _connected_clients
@@ -1040,7 +1227,17 @@ def _on_connect():
             "ip": ip,
             "is_local": is_local
         }
-        
+
+    from flask_socketio import join_room
+    if _socket_is_manager():
+        join_room(MANAGER_ROOM)
+        with _sockets_lock:
+            connected_sockets[request.sid]["tier"] = "manager"
+    else:
+        join_room(SCANNER_ROOM)
+        with _sockets_lock:
+            connected_sockets[request.sid]["tier"] = "scanner"
+
     _emit_clients_count()
     
     with _devices_lock:
@@ -1226,7 +1423,7 @@ def save_sharing_settings():
         _log_audit("Sharing Changed", "Dashboard set to PUBLIC (no passcode required)", "Security")
     dashboard_sharing = sharing
         
-    socketio.emit("sharing_updated", {})
+    _emit_managers("sharing_updated", {})
     return jsonify(message="Dashboard sharing settings saved successfully.")
 
 
@@ -2168,7 +2365,7 @@ def approve_quarantine():
                 _atomic_save(wb, excel_file)
                 wb = None
                 
-                socketio.emit("registry_updated", {})
+                _emit_managers("registry_updated", {})
                 
             # Perform check-in again now that registration exists!
             res, code = _perform_checkin(qr_data, device_id=f"Approved:{device_name}", force_bypass=True)
@@ -2192,7 +2389,7 @@ def approve_quarantine():
         print(f"[quarantine] Error updating quarantine file: {ex}")
 
     _log_audit("Quarantine Approved", f"ID: {q_id}, QR: {qr_data}", device_name)
-    socketio.emit("quarantine_updated", {})
+    _emit_managers("quarantine_updated", {})
     return jsonify(message=f"✅ Quarantine entry approved and checked in. {res.get('message', '')}")
 
 
@@ -2228,7 +2425,7 @@ def reject_quarantine():
         print(f"[quarantine] Error saving quarantine file: {ex}")
 
     _log_audit("Quarantine Rejected", f"ID: {q_id}", "Admin Dashboard")
-    socketio.emit("quarantine_updated", {})
+    _emit_managers("quarantine_updated", {})
     return jsonify(message="✅ Quarantine entry rejected and removed.")
 
 
@@ -2349,7 +2546,7 @@ def revoke_checkin():
                     scanned_log.to_csv(get_log_file(), index=False)
 
         _log_audit("Check-In Revoked", f"Attendee: {name_val} ({reg_no}), Reason: {reason}", "Admin Dashboard")
-        socketio.emit("registry_updated", {})
+        _emit_managers("registry_updated", {})
         _emit_stats()
 
         return jsonify(message=f"✅ Check-in for {name_val} ({reg_no}) has been revoked.")
@@ -2434,7 +2631,7 @@ def bulk_notify():
                 except Exception as ex:
                     print(f"[bulk_notify] Error for {reg_no}: {ex}")
                     failed += 1
-            socketio.emit("registry_updated", {})
+            _emit_managers("registry_updated", {})
             print(f"[bulk_notify] Completed: {sent} sent, {failed} failed")
 
         threading.Thread(target=_do_bulk_notify, daemon=True).start()
@@ -2531,7 +2728,7 @@ def save_group():
         groups.append(new_grp)
     _save_groups(groups)
     _log_audit("Custom Group Saved", f"Group: {group_name}, Members: {len(reg_nos)}", "Admin Dashboard")
-    socketio.emit("groups_updated", {})
+    _emit_managers("groups_updated", {})
     return jsonify(message=f"✅ Group '{group_name}' saved with {len(reg_nos)} members.")
 
 
@@ -2553,7 +2750,7 @@ def delete_group():
 
     _save_groups(groups)
     _log_audit("Custom Group Deleted", f"Group: {group_name}", "Admin Dashboard")
-    socketio.emit("groups_updated", {})
+    _emit_managers("groups_updated", {})
     return jsonify(message=f"✅ Group '{group_name}' deleted.")
 
 
@@ -2931,7 +3128,7 @@ def clean_duplicates():
             
         if removed_cnt > 0:
             threading.Thread(target=_rebuild_highlighted, daemon=True).start()
-            socketio.emit("registry_updated", {})
+            _emit_managers("registry_updated", {})
             _emit_stats()
             
         return jsonify(message=f"Cleaned {removed_cnt} duplicate rows successfully.", cleaned=removed_cnt), 200
@@ -3014,7 +3211,7 @@ def regenerate_assets():
             wb = None
             
         threading.Thread(target=_rebuild_highlighted, daemon=True).start()
-        socketio.emit("registry_updated", {})
+        _emit_managers("registry_updated", {})
         
         return jsonify(message="Successfully regenerated and re-embedded all QR codes and barcodes."), 200
         
@@ -3063,7 +3260,7 @@ def select_event():
     active_event = clean_name
     load_active_event()
     
-    socketio.emit("registry_updated", {})
+    _emit_managers("registry_updated", {})
     _emit_stats()
     
     return jsonify(message=f"Switched active event to '{active_event}'", active=active_event)
@@ -3128,10 +3325,8 @@ _CONFIG_SERVER_ONLY_KEYS = {"event_signing_key"}
 
 @app.route("/get_config", methods=["GET"])
 def get_config():
-    cfg = dict(get_event_config())
-    for key in _CONFIG_SERVER_ONLY_KEYS:
-        cfg.pop(key, None)
-    return jsonify(cfg)
+    # Secrets leave the server as SECRET_MASK; the signing key not at all.
+    return jsonify(redact_config(get_event_config()))
 
 
 @app.route("/save_config", methods=["POST"])
@@ -3142,6 +3337,11 @@ def save_config():
         # The browser never receives these, so it must never be able to
         # overwrite (or blank) them either.
         if k in _CONFIG_SERVER_ONLY_KEYS:
+            continue
+        # A masked secret coming back means "unchanged" -- never overwrite a
+        # real credential with the placeholder the browser was shown.
+        if k in SECRET_CONFIG_KEYS:
+            cfg[k] = resolve_secret(v, cfg, k)
             continue
         cfg[k] = v
     save_event_config(cfg)
@@ -3179,7 +3379,7 @@ def _run_tunnel():
     lhrtunnel_pattern = re.compile(r"https?://[a-zA-Z0-9.-]+\.lhrtunnel\.link")
     
     _tunnel_active = True
-    socketio.emit("tunnel_status_update", {"active": True, "url": "Connecting..."})
+    _emit_managers("tunnel_status_update", {"active": True, "url": "Connecting..."})
     
     while _tunnel_active:
         try:
@@ -3211,11 +3411,11 @@ def _run_tunnel():
                 if match:
                     _tunnel_url = match.group(0)
                     print(f"[tunnel] Extracted tunnel URL: {_tunnel_url}")
-                    socketio.emit("tunnel_status_update", {"active": True, "url": _tunnel_url})
+                    _emit_managers("tunnel_status_update", {"active": True, "url": _tunnel_url})
             
             if _tunnel_active:
                 print("[tunnel] SSH tunnel dropped. Reconnecting in 3 seconds...")
-                socketio.emit("tunnel_status_update", {"active": True, "url": "Reconnecting..."})
+                _emit_managers("tunnel_status_update", {"active": True, "url": "Reconnecting..."})
                 time.sleep(3)
         except Exception as e:
             print(f"[tunnel] Loop Error: {e}")
@@ -3223,7 +3423,7 @@ def _run_tunnel():
                 time.sleep(3)
                 
     print("[tunnel] Tunnel SSH loop fully stopped.")
-    socketio.emit("tunnel_status_update", {"active": False, "url": None})
+    _emit_managers("tunnel_status_update", {"active": False, "url": None})
 
 
 @app.route("/start_tunnel", methods=["POST"])
@@ -3250,7 +3450,7 @@ def stop_tunnel():
         _tunnel_active = False
         _tunnel_url = None
         _tunnel_process = None
-    socketio.emit("tunnel_status_update", {"active": False, "url": None})
+    _emit_managers("tunnel_status_update", {"active": False, "url": None})
     return jsonify(message="Tunnel stopped.")
 
 
@@ -5029,7 +5229,7 @@ def add_attendee():
         if cfg.get("reg_notify_email") or cfg.get("reg_notify_whatsapp") or cfg.get("reg_notify_sms"):
             registration_notifications_queue.put((reg_no, cfg, request.host_url))
             
-        socketio.emit("registry_updated", {})
+        _emit_managers("registry_updated", {})
         _emit_stats()
         
         return jsonify(message=f"Successfully registered {name} ({reg_no})"), 200
@@ -5278,7 +5478,7 @@ def _perform_bulk_import(rows, mode, auto_resolve) -> tuple[dict, int]:
             except Exception as ex:
                 print(f"[import] Error queuing auto notifications: {ex}")
                 
-        socketio.emit("registry_updated", {})
+        _emit_managers("registry_updated", {})
         _emit_stats()
         
         return {
@@ -5525,7 +5725,7 @@ def _update_sent_status(reg_no: str, channel: str, status: str):
             _atomic_save(wb, excel_file)
             wb = None
     
-        socketio.emit("registry_updated", {})
+        _emit_managers("registry_updated", {})
         threading.Thread(target=_rebuild_highlighted, daemon=True).start()
     except Exception as e:
         print(f"[status-update] Error: {e}")
@@ -5592,7 +5792,7 @@ def _run_whatsapp_campaign(wa_provider, target_column, target_subgroup, host_url
             _whatsapp_progress["current_status"] = "Failed to load attendees"
             _whatsapp_progress["logs"].append(f"❌ Error loading attendees: {str(e)}")
             _whatsapp_sending_active = False
-        socketio.emit("whatsapp_progress_update", _whatsapp_progress)
+        _emit_managers("whatsapp_progress_update", _whatsapp_progress)
         return
         
     total_count = len(attendees)
@@ -5603,7 +5803,7 @@ def _run_whatsapp_campaign(wa_provider, target_column, target_subgroup, host_url
         _whatsapp_progress["failed"] = 0
         _whatsapp_progress["current_status"] = "Starting WhatsApp campaign..."
         _whatsapp_progress["logs"] = [f"🚀 Started WhatsApp campaign ({wa_provider}). Total recipients: {total_count}"]
-    socketio.emit("whatsapp_progress_update", _whatsapp_progress)
+    _emit_managers("whatsapp_progress_update", _whatsapp_progress)
     
     for idx, att in enumerate(attendees):
         name = att["name"]
@@ -5614,7 +5814,7 @@ def _run_whatsapp_campaign(wa_provider, target_column, target_subgroup, host_url
         with _whatsapp_sending_lock:
             _whatsapp_progress["current_phone"] = phone
             _whatsapp_progress["current_status"] = f"Processing {phone} ({idx+1}/{total_count})"
-        socketio.emit("whatsapp_progress_update", _whatsapp_progress)
+        _emit_managers("whatsapp_progress_update", _whatsapp_progress)
         
         success, msg, extra_data = _send_single_whatsapp(phone, name, reg, row_dict, cfg, host_url)
         
@@ -5639,7 +5839,7 @@ def _run_whatsapp_campaign(wa_provider, target_column, target_subgroup, host_url
                 _whatsapp_progress["failed"] += 1
                 _whatsapp_progress["logs"].append(log_msg)
                 
-        socketio.emit("whatsapp_progress_update", _whatsapp_progress)
+        _emit_managers("whatsapp_progress_update", _whatsapp_progress)
         time.sleep(1.2)
         
     with _whatsapp_sending_lock:
@@ -5647,7 +5847,7 @@ def _run_whatsapp_campaign(wa_provider, target_column, target_subgroup, host_url
         _whatsapp_progress["current_phone"] = ""
         _whatsapp_progress["logs"].append(f"🏁 WhatsApp Campaign finished. Sent: {_whatsapp_progress['sent']}, Skipped: {_whatsapp_progress['skipped']}, Failed: {_whatsapp_progress['failed']}.")
         _whatsapp_sending_active = False
-    socketio.emit("whatsapp_progress_update", _whatsapp_progress)
+    _emit_managers("whatsapp_progress_update", _whatsapp_progress)
 
 
 @app.route("/send_whatsapp_bulk", methods=["POST"])
@@ -5665,12 +5865,12 @@ def send_whatsapp_bulk():
     
     if wa_provider == "twilio":
         cfg["twilio_sid"] = payload.get("twilio_sid", "").strip()
-        cfg["twilio_token"] = payload.get("twilio_token", "").strip()
+        cfg["twilio_token"] = resolve_secret(payload.get("twilio_token", ""), cfg, "twilio_token")
         cfg["twilio_sender"] = payload.get("twilio_sender", "").strip()
         if not cfg["twilio_sid"] or not cfg["twilio_token"] or not cfg["twilio_sender"]:
             return jsonify(message="Twilio SID, Token, and Sender number are required."), 400
     elif wa_provider == "meta":
-        cfg["meta_access_token"] = payload.get("meta_access_token", "").strip()
+        cfg["meta_access_token"] = resolve_secret(payload.get("meta_access_token", ""), cfg, "meta_access_token")
         cfg["meta_phone_number_id"] = payload.get("meta_phone_number_id", "").strip()
         cfg["meta_template_name"] = payload.get("meta_template_name", "").strip()
         cfg["meta_lang_code"] = payload.get("meta_lang_code", "en_US").strip()
@@ -5770,7 +5970,7 @@ def _run_email_campaign(sender_email, app_password, subject, event_name, target_
             _email_progress["current_status"] = "Failed to load attendees"
             _email_progress["logs"].append(f"❌ Error loading attendees: {str(e)}")
             _email_sending_active = False
-        socketio.emit("email_progress_update", _email_progress)
+        _emit_managers("email_progress_update", _email_progress)
         return
         
     total_count = len(attendees)
@@ -5781,7 +5981,7 @@ def _run_email_campaign(sender_email, app_password, subject, event_name, target_
         _email_progress["failed"] = 0
         _email_progress["current_status"] = "Starting campaign..."
         _email_progress["logs"] = [f"🚀 Started email campaign. Total recipients: {total_count}"]
-    socketio.emit("email_progress_update", _email_progress)
+    _emit_managers("email_progress_update", _email_progress)
     
     yag = None
     try:
@@ -5791,7 +5991,7 @@ def _run_email_campaign(sender_email, app_password, subject, event_name, target_
             _email_progress["current_status"] = "SMTP Authentication failed"
             _email_progress["logs"].append(f"❌ SMTP Connection Error: {str(e)}")
             _email_sending_active = False
-        socketio.emit("email_progress_update", _email_progress)
+        _emit_managers("email_progress_update", _email_progress)
         return
         
     qr_dir = get_qr_dir()
@@ -5806,7 +6006,7 @@ def _run_email_campaign(sender_email, app_password, subject, event_name, target_
         with _email_sending_lock:
             _email_progress["current_email"] = recipient
             _email_progress["current_status"] = f"Sending to {recipient} ({idx+1}/{total_count})"
-        socketio.emit("email_progress_update", _email_progress)
+        _emit_managers("email_progress_update", _email_progress)
         
         if not os.path.exists(qr_file):
             msg = f"⚠️ Skipped {name} ({recipient}) — QR image missing"
@@ -5814,7 +6014,7 @@ def _run_email_campaign(sender_email, app_password, subject, event_name, target_
             with _email_sending_lock:
                 _email_progress["skipped"] += 1
                 _email_progress["logs"].append(msg)
-            socketio.emit("email_progress_update", _email_progress)
+            _emit_managers("email_progress_update", _email_progress)
             continue
             
         from_cfg_email_subject = cfg.get("email_subject", "Your Event QR Code")
@@ -5843,7 +6043,7 @@ def _run_email_campaign(sender_email, app_password, subject, event_name, target_
                 wait = 2 ** attempt
                 with _email_sending_lock:
                     _email_progress["logs"].append(f"   Attempt {attempt} failed for {recipient}: {str(e)}. Retrying in {wait}s...")
-                socketio.emit("email_progress_update", _email_progress)
+                _emit_managers("email_progress_update", _email_progress)
                 time.sleep(wait)
                 
         if success:
@@ -5859,7 +6059,7 @@ def _run_email_campaign(sender_email, app_password, subject, event_name, target_
                 _email_progress["failed"] += 1
                 _email_progress["logs"].append(msg)
                 
-        socketio.emit("email_progress_update", _email_progress)
+        _emit_managers("email_progress_update", _email_progress)
         time.sleep(1.0)
         
     try:
@@ -5872,7 +6072,7 @@ def _run_email_campaign(sender_email, app_password, subject, event_name, target_
         _email_progress["current_email"] = ""
         _email_progress["logs"].append(f"🏁 Campaign finished. Sent: {_email_progress['sent']}, Skipped: {_email_progress['skipped']}, Failed: {_email_progress['failed']}.")
         _email_sending_active = False
-    socketio.emit("email_progress_update", _email_progress)
+    _emit_managers("email_progress_update", _email_progress)
 
 
 @app.route("/send_emails", methods=["POST"])
@@ -5882,8 +6082,11 @@ def send_emails():
         return jsonify(message="Request must be JSON."), 415
         
     payload = request.json or {}
+    _stored = get_event_config()
     sender = payload.get("sender_email", "").strip()
-    password = payload.get("app_password", "").strip()
+    # The dashboard holds SECRET_MASK rather than the real app password, so
+    # fall back to the stored credential when that is what comes back.
+    password = resolve_secret(payload.get("app_password", ""), _stored, "email_password")
     subject = payload.get("subject", "Your Event QR Code").strip()
     event = payload.get("event_name", "the Event").strip()
     
@@ -5987,7 +6190,7 @@ def _run_sms_campaign(sms_provider, event_name, host_url, target_column=None, ta
             _sms_progress["current_status"] = "Failed to load attendees"
             _sms_progress["logs"].append(f"\u274c Error loading attendees: {str(e)}")
             _sms_sending_active = False
-        socketio.emit("sms_progress_update", _sms_progress)
+        _emit_managers("sms_progress_update", _sms_progress)
         return
 
     total_count = len(attendees)
@@ -5998,7 +6201,7 @@ def _run_sms_campaign(sms_provider, event_name, host_url, target_column=None, ta
         _sms_progress["failed"] = 0
         _sms_progress["current_status"] = "Starting SMS campaign..."
         _sms_progress["logs"] = [f"\U0001f680 Started SMS campaign ({sms_provider}). Total recipients: {total_count}"]
-    socketio.emit("sms_progress_update", _sms_progress)
+    _emit_managers("sms_progress_update", _sms_progress)
 
     for idx, att in enumerate(attendees):
         name = att["name"]
@@ -6009,7 +6212,7 @@ def _run_sms_campaign(sms_provider, event_name, host_url, target_column=None, ta
         with _sms_sending_lock:
             _sms_progress["current_phone"] = phone
             _sms_progress["current_status"] = f"Processing {phone} ({idx + 1}/{total_count})"
-        socketio.emit("sms_progress_update", _sms_progress)
+        _emit_managers("sms_progress_update", _sms_progress)
 
         # Resolve per-subgroup SMS template
         from_cfg_sms_template = cfg.get("sms_template", "")
@@ -6033,7 +6236,7 @@ def _run_sms_campaign(sms_provider, event_name, host_url, target_column=None, ta
                 _sms_progress["failed"] += 1
                 _sms_progress["logs"].append(log_msg)
 
-        socketio.emit("sms_progress_update", _sms_progress)
+        _emit_managers("sms_progress_update", _sms_progress)
         time.sleep(1.2)  # Polite rate-limit between sends
 
     with _sms_sending_lock:
@@ -6044,7 +6247,7 @@ def _run_sms_campaign(sms_provider, event_name, host_url, target_column=None, ta
             f"Skipped: {_sms_progress['skipped']}, Failed: {_sms_progress['failed']}."
         )
         _sms_sending_active = False
-    socketio.emit("sms_progress_update", _sms_progress)
+    _emit_managers("sms_progress_update", _sms_progress)
 
 
 @app.route("/send_sms_bulk", methods=["POST"])
@@ -6068,7 +6271,7 @@ def send_sms_bulk():
         cfg["android_gateway_url"] = f"{android_ip}:{android_port}"
     elif sms_provider == "twilio":
         cfg["twilio_sms_sid"] = payload.get("twilio_sms_sid", "").strip()
-        cfg["twilio_sms_token"] = payload.get("twilio_sms_token", "").strip()
+        cfg["twilio_sms_token"] = resolve_secret(payload.get("twilio_sms_token", ""), cfg, "twilio_sms_token")
         cfg["twilio_sms_sender"] = payload.get("twilio_sms_sender", "").strip()
         if not cfg["twilio_sms_sid"] or not cfg["twilio_sms_token"] or not cfg["twilio_sms_sender"]:
             return jsonify(message="Twilio SID, Token, and Sender number are required."), 400
