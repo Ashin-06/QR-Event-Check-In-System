@@ -80,7 +80,7 @@ qr_checkin_system/
 ├── templates/
 │   ├── dashboard.html               # Manager Control Center UI
 │   ├── index.html                   # Mobile-first QR/Barcode camera scanner
-│   └── public_login.html            # Passcode verification gate
+│   └── dashboard_login.html         # Passcode verification gate
 │
 ├── static/
 │   ├── css/ & js/                   # Offline libraries (jQuery, DataTables)
@@ -314,3 +314,87 @@ Every feature and regression suite has been verified using automated end-to-end 
    * For remote staff on mobile data, open the **📡 Public Internet Tunnel** panel and click **Start Public Tunnel**.
 3. **Check Documentation Anytime**:
    * Click the **📖 Help Guide** button on the dashboard or hover/click any **`(i)`** info badge for instant contextual guidance.
+
+---
+
+## 🔐 8. Production Hardening Pass (2026-08-25)
+
+This release closed a set of defects that only surface once the system is
+exposed beyond the operator's own laptop — the ID badge renderer producing
+wrong output, and the management API answering unauthenticated callers.
+
+### 8.1 Access Control — the API is now gated, not just the page
+
+Before this pass, `is_dashboard_authorized()` was called from exactly one place:
+the `/dashboard` HTML route. Every management endpoint behind it answered any
+caller that could reach the port — over the venue Wi-Fi, and over the public
+SSH tunnel.
+
+```mermaid
+flowchart LR
+    subgraph Before [Before]
+        R1[Any LAN / tunnel client] -->|no session| E1[/registry, /get_config,\n/send_emails, /save_config,\n/start_tunnel, /clean_duplicates/]
+        E1 --> L1[Full roster + SMTP password\n+ Twilio tokens returned]
+    end
+    subgraph After [After]
+        R2[Any LAN / tunnel client] --> G[before_request guard]
+        G -->|endpoint in PUBLIC_ENDPOINTS| P[/, /scan, /stats,\n/network_info, /qrcodes, /barcodes/]
+        G -->|otherwise, no session| D[401 Not authorized]
+        G -->|valid session or localhost| A[Management API]
+    end
+```
+
+A single `@app.before_request` guard now authorises **every** endpoint. The
+allowlist (`PUBLIC_ENDPOINTS`) contains only what a volunteer's scanner phone
+and an attendee's pass link actually need: the scanner client, `/scan`,
+`/stats`, `/network_info`, the login form, and the QR/barcode image routes that
+are mailed out to guests. Requests from `localhost` remain exempt so the
+operator's own machine keeps working with no passcode.
+
+### 8.2 Complete Changelog — Hardening Pass
+
+| # | Component | Problem / Symptom | Root Cause | Solution & Architectural Fix | Status |
+|---|---|---|---|---|---|
+| **14** | **ID Badge Renderer** | Role pill rendered as a solid block of colour with the text invisible inside it; hairline borders and theme glows rendered as hard opaque lines | `ImageDraw` **replaces** pixels including the alpha channel rather than blending them. A fill of `(255, 215, 0, 25)` on an RGBA canvas stored alpha 25, which `convert("RGB")` then dropped — turning every 10%-opacity accent into 100% gold. The accent-coloured pill text then sat on an identically-coloured pill. | Introduced `_new_layer()` / `_flatten()` helpers in `_generate_id_card`: every translucent element is drawn on its own transparent layer and merged with `Image.alpha_composite`. All theme shapes, borders, dividers and the pill now blend correctly. | ✅ Fixed |
+| **15** | **ID Badge Renderer** | Profile photos never appeared on the default themed badges | `profile_photo` was wired into the two custom-designer branches only; the PIL theme path ignored the parameter entirely. | Added circular-avatar rendering to the theme path: cover-crop to square (no face squashing), 4× supersampled circular mask for clean edges, and an accent-coloured ring. | ✅ Fixed |
+| **16** | **ID Badge Renderer** | Large dead space between the detail block and the QR panel | Fixed pixel coordinates assumed one layout regardless of content. | Layout now adapts: photo/no-photo variants drive name, detail and QR positions, and the QR panel is pushed down and shrunk automatically if the detail list is long, so it can never collide with the details or the footer. | ✅ Fixed |
+| **17** | **ID Badge Renderer** | Long names, event titles and emails overran the card edge | No measurement against the available width. | Added `_fit_text()`, which measures with `textlength` and ellipsises to fit. | ✅ Fixed |
+| **18** | **ID Badge Renderer** | Badges silently degraded to a tiny bitmap font on any machine without `arial.ttf` | Font loading tried exactly one Windows filename and fell back to `ImageFont.load_default()`. | `_load_font()` walks a candidate chain (Arial → Segoe UI → DejaVu → system Helvetica) for regular / bold / mono, so Linux and macOS hosts render identically. | ✅ Fixed |
+| **19** | **ID Badge Print Output** | PDF badges printed soft | PDFs were written at `resolution=100.0`. | Raised to 300 DPI for print-ready output. | ✅ Fixed |
+| **20** | **Management API** | Roster, event config (SMTP password, Twilio tokens), bulk-send, tunnel control and destructive endpoints answered any unauthenticated caller on the LAN or public tunnel | Authorisation was enforced on the `/dashboard` page only. | Added a global `@app.before_request` guard with an explicit `PUBLIC_ENDPOINTS` allowlist; everything else requires a session or a localhost origin. | ✅ Fixed |
+| **21** | **Access Passcode** | `/dashboard_sharing_info` returned the live dashboard passcode to *unauthenticated* callers | The endpoint had no authorisation check of its own. | Now covered by the global guard. | ✅ Fixed |
+| **22** | **Access Passcode** | 4-digit PIN from `random.choices()` with unlimited guesses | Non-cryptographic PRNG, short PIN, no attempt tracking, and `==` comparison. | 6 digits from `secrets.choice()` (overridable via `DASHBOARD_PASSCODE`), `hmac.compare_digest` comparison, and an 8-attempt / 5-minute per-IP lockout applied to both the login form and the `?passcode=` link. Failures and lockouts are written to the audit log. | ✅ Fixed |
+| **23** | **Session Management** | Every restart silently logged out all operators | `SECRET_KEY` defaulted to `os.urandom(24)` on each boot. | Key is persisted to `.secret_key` (0600) and reused; `SECRET_KEY` in the environment still wins. Cookies are now `HttpOnly` + `SameSite=Lax`, with `Secure` enabled by `FORCE_HTTPS=true`. | ✅ Fixed |
+| **24** | **File Uploads** | Any file type could be written into the Flask-served `static/uploads/`, and `/upload_profile_photo/<reg_no>` built its filename straight from the URL segment | No content validation, no extension allowlist, no path sanitisation, no size ceiling. | `_validate_image_upload()` enforces an image extension allowlist **and** decodes the bytes with Pillow before the file is saved; designer assets are re-suffixed with the validated extension; `MAX_CONTENT_LENGTH` caps uploads at 25 MB (`MAX_UPLOAD_MB`). | ✅ Fixed |
+| **25** | **Asset Generation** | Registration numbers from imported rosters flowed straight into QR / barcode / ID-card / photo filenames | No sanitisation, so a value containing `..` or a path separator wrote outside the event folder (and rows like `22,EI10025` produced unusable filenames). | Added `_safe_asset_name()` — basename, allowlist of `[A-Za-z0-9._-]`, 80-char cap — applied at every asset filename construction site. | ✅ Fixed |
+| **26** | **Profile Photos** | The server fetched arbitrary URLs taken from uploaded spreadsheets | Server-side request forgery: a roster row could point the server at loopback, private-LAN or cloud-metadata addresses, with the response cached as an "image". | `_is_safe_remote_url()` resolves the host and rejects private / loopback / link-local / reserved / multicast targets; downloads are streamed and capped at 10 MB. | ✅ Fixed |
+| **27** | **Event Signing Key** | `/get_config` returned `event_signing_key` to the browser | The whole config dict was serialised verbatim. | The key is stripped from `/get_config` responses and ignored on `/save_config`, so the browser can neither read nor blank the value that makes signed QR payloads unforgeable. | ✅ Fixed |
+| **28** | **Scan Notifications** | WhatsApp check-in confirmations never sent | `_send_single_whatsapp` was defined **twice** in `app.py`. The later campaign-sender definition `(phone, name, reg_no, row_dict, cfg, host_url)` shadowed the notification sender `(sid, token, sender_phone, recipient_phone, body)`, so the notification thread called the wrong function with mismatched positional arguments. | Renamed the notification sender to `_send_twilio_whatsapp_notify` and updated its call site. | ✅ Fixed |
+| **29** | **Documentation API** | Two routes registered for `/help_content` | Duplicate definitions; the second was dead code Flask never dispatched to. | Removed the unreachable duplicate. | ✅ Fixed |
+| **30** | **Deployment** | `pip install -r requirements.txt` produced a non-working install | `requirements.txt` omitted Pillow, html2image, requests, twilio, numpy and werkzeug — all imported by `app.py`. | Rewrote `requirements.txt` against the module's actual imports, grouped by purpose and marking the optional (Twilio, headless-Chrome) extras. | ✅ Fixed |
+| **31** | **HTTP Responses** | No baseline browser-hardening headers | Only cache-control headers were set. | `add_header` now also sets `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy` and `Permissions-Policy`. A script-level CSP was deliberately **not** added: the dashboard and the badge designer rely on inline scripts and a CDN Tailwind build. | ✅ Fixed |
+
+### 8.3 Deployment Environment Variables
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `PORT` | `5001` | HTTP listen port |
+| `SECRET_KEY` | persisted `.secret_key` | Session signing key; set explicitly for multi-worker deployments |
+| `DASHBOARD_PASSCODE` | random 6 digits per boot | Fixed operator passcode instead of a per-boot one |
+| `MAX_UPLOAD_MB` | `25` | Upload size ceiling |
+| `FORCE_HTTPS` | `false` | Marks the session cookie `Secure` (enable only behind TLS) |
+| `CORS_ORIGIN` | `*` | Comma-separated Socket.IO origin allowlist |
+| `FLASK_DEBUG` | `false` | Never enable on a reachable network |
+
+### 8.4 Known Limitations
+
+* **Socket.IO broadcasts are not access-controlled.** Scanner phones must be
+  able to connect without a passcode, and check-in events are broadcast to all
+  connected clients — so a client on the same network can observe live scan
+  names. Gating this requires separate scanner and manager credentials.
+* **Messaging credentials are stored in plaintext** in each event's
+  `config.json` and are round-tripped through the dashboard form. They are now
+  reachable only by an authorised operator, but they are not encrypted at rest.
+* **The reverse SSH tunnel exposes the server to the public internet.** With
+  sharing set to `public`, that means no passcode at all — the mode now writes
+  a security audit entry when enabled.

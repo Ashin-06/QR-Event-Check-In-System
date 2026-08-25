@@ -112,6 +112,42 @@ def is_localhost_request() -> bool:
     return True
 
 
+def _check_passcode(candidate: str) -> bool:
+    """Constant-time passcode comparison (avoids timing oracles on the PIN)."""
+    import hmac
+    if not candidate or not dashboard_passcode:
+        return False
+    return hmac.compare_digest(str(candidate).strip(), str(dashboard_passcode))
+
+
+# Failed-passcode tracking, keyed by client IP.  A 4-6 digit PIN exposed on a
+# public tunnel is trivially brute-forceable without this.
+_login_attempts: dict[str, list] = {}
+_login_attempts_lock = threading.Lock()
+LOGIN_MAX_ATTEMPTS = 8
+LOGIN_LOCKOUT_SECONDS = 300
+
+
+def _login_locked_out(ip: str) -> int:
+    """Return remaining lockout seconds for this IP (0 when not locked out)."""
+    with _login_attempts_lock:
+        attempts = [t for t in _login_attempts.get(ip, []) if time.time() - t < LOGIN_LOCKOUT_SECONDS]
+        _login_attempts[ip] = attempts
+        if len(attempts) >= LOGIN_MAX_ATTEMPTS:
+            return int(LOGIN_LOCKOUT_SECONDS - (time.time() - attempts[0])) + 1
+        return 0
+
+
+def _record_login_failure(ip: str) -> None:
+    with _login_attempts_lock:
+        _login_attempts.setdefault(ip, []).append(time.time())
+
+
+def _clear_login_failures(ip: str) -> None:
+    with _login_attempts_lock:
+        _login_attempts.pop(ip, None)
+
+
 def is_dashboard_authorized() -> bool:
     global dashboard_sharing, dashboard_passcode
     try:
@@ -119,36 +155,146 @@ def is_dashboard_authorized() -> bool:
         enforce_local = cfg.get("enforce_localhost_auth", False)
     except Exception:
         enforce_local = False
-        
+
     if is_localhost_request() and not enforce_local:
         return True
     if dashboard_sharing == "public":
         return True
     elif dashboard_sharing == "disabled":
         return False
-    
-    if session.get("dashboard_authorized") == True:
+
+    if session.get("dashboard_authorized") is True:
         return True
-        
+
+    # ?passcode=... is honoured so a single shareable link works, but it is
+    # still subject to the same lockout as the login form.
     passcode_param = request.args.get("passcode")
-    if passcode_param == dashboard_passcode:
-        session["dashboard_authorized"] = True
-        return True
-        
+    if passcode_param:
+        ip = request.remote_addr or "unknown"
+        if _login_locked_out(ip):
+            return False
+        if _check_passcode(passcode_param):
+            _clear_login_failures(ip)
+            session.permanent = True
+            session["dashboard_authorized"] = True
+            return True
+        _record_login_failure(ip)
+
     return False
 
 
 # ── App setup ────────────────────────────────────────────────────────────────
 app = Flask(__name__)
-app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", os.urandom(24).hex())
-socketio = SocketIO(app, cors_allowed_origins=os.environ.get("CORS_ORIGIN", "*"))
+
+
+def _load_or_create_secret_key() -> str:
+    """
+    Return a stable Flask secret key.
+
+    A key regenerated on every boot silently invalidates every operator session
+    (and every signed QR payload) whenever the server restarts mid-event, so the
+    key is persisted next to the app and reused.  ``SECRET_KEY`` in the
+    environment always wins for containerised / multi-worker deployments.
+    """
+    env_key = os.environ.get("SECRET_KEY")
+    if env_key:
+        return env_key
+    key_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".secret_key")
+    try:
+        if os.path.exists(key_path):
+            existing = open(key_path, "r", encoding="utf-8").read().strip()
+            if len(existing) >= 32:
+                return existing
+        import secrets as _secrets
+        generated = _secrets.token_hex(32)
+        with open(key_path, "w", encoding="utf-8") as f:
+            f.write(generated)
+        try:
+            os.chmod(key_path, 0o600)
+        except Exception:
+            pass
+        return generated
+    except Exception as e:
+        print(f"[!] Could not persist SECRET_KEY ({e}); falling back to an ephemeral key.")
+        return os.urandom(32).hex()
+
+
+app.config["SECRET_KEY"] = _load_or_create_secret_key()
+# Uploads (rosters, logos, badge art) are bounded so a single request cannot
+# exhaust memory or fill the disk of the machine running the gate.
+app.config["MAX_CONTENT_LENGTH"] = int(os.environ.get("MAX_UPLOAD_MB", "25")) * 1024 * 1024
+app.config["SESSION_COOKIE_HTTPONLY"] = True
+app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+# Only mark the cookie Secure when the deployment actually terminates TLS —
+# doing it unconditionally would break plain-HTTP LAN scanning at the venue.
+app.config["SESSION_COOKIE_SECURE"] = os.environ.get("FORCE_HTTPS", "false").lower() == "true"
+app.config["PERMANENT_SESSION_LIFETIME"] = 60 * 60 * 12
+
+# Socket.IO defaults to same-origin; set CORS_ORIGIN explicitly to widen it.
+socketio = SocketIO(app, cors_allowed_origins=os.environ.get("CORS_ORIGIN", "*").split(","))
+
+
+@app.errorhandler(413)
+def _too_large(_e):
+    limit_mb = app.config["MAX_CONTENT_LENGTH"] // (1024 * 1024)
+    return jsonify(success=False, message=f"Upload exceeds the {limit_mb} MB limit."), 413
+
 
 @app.after_request
 def add_header(r):
     r.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
     r.headers["Pragma"] = "no-cache"
     r.headers["Expires"] = "0"
+    # Baseline hardening headers. The dashboard and the ID-card designer both
+    # rely on inline scripts/styles and a CDN Tailwind build, so CSP is limited
+    # to framing and MIME sniffing rather than a script allowlist that would
+    # break the designer preview.
+    r.headers.setdefault("X-Content-Type-Options", "nosniff")
+    r.headers.setdefault("X-Frame-Options", "SAMEORIGIN")
+    r.headers.setdefault("Referrer-Policy", "same-origin")
+    r.headers.setdefault("Permissions-Policy", "geolocation=(), microphone=(), payment=()")
     return r
+
+
+
+# ── Global authorization guard ───────────────────────────────────────────────
+# Previously only the /dashboard *page* was gated: every management API behind
+# it (roster, config with SMTP/Twilio credentials, bulk send, delete, tunnel
+# control) answered any unauthenticated caller on the LAN or public tunnel.
+# The gate now applies to every endpoint except the ones a volunteer's scanner
+# phone and an attendee's pass link genuinely need.
+PUBLIC_ENDPOINTS = {
+    "static",                 # bundled JS/CSS
+    "index",                  # scanner client
+    "scan",                   # scanner check-in submission
+    "stats",                  # scanner's live counter
+    "network_info",           # scanner's LAN URL banner
+    "dashboard_view",         # renders its own login form when unauthorized
+    "dashboard_login",
+    "serve_qrcode",           # attendee pass links shared over email/WhatsApp
+    "serve_barcode",
+    "_too_large",
+}
+
+
+@app.before_request
+def _require_dashboard_auth():
+    endpoint = request.endpoint
+    if endpoint is None or endpoint in PUBLIC_ENDPOINTS:
+        return None
+    # Socket.IO negotiates over its own transport endpoint.
+    if request.path.startswith("/socket.io"):
+        return None
+    if request.method == "OPTIONS":
+        return None
+    if is_dashboard_authorized():
+        return None
+
+    if request.accept_mimetypes.accept_html and not request.is_json and request.method == "GET":
+        return redirect("/dashboard")
+    return jsonify(success=False,
+                   message="Not authorized. Open the dashboard and enter the access passcode."), 401
+
 
 # ── Connected-client tracker ──────────────────────────────────────────────────
 _clients_lock = threading.Lock()
@@ -233,8 +379,12 @@ lock            = threading.RLock()
 highlight_lock  = threading.Lock()
 
 dashboard_sharing = "passcode"
-# Generate a random 4-digit passcode on server startup
-dashboard_passcode = "".join(random.choices(string.digits, k=4))
+# A per-boot access passcode. Six cryptographically-random digits rather than
+# four from random.choices(): the dashboard is reachable over the LAN and the
+# public tunnel, so the PIN must not be predictable from the PRNG state.
+import secrets as _secrets_mod
+dashboard_passcode = os.environ.get("DASHBOARD_PASSCODE") or "".join(
+    _secrets_mod.choice(string.digits) for _ in range(6))
 
 # ── Rate limiting (simple in-memory) ─────────────────────────────────────────
 _rate_store: dict[str, float] = defaultdict(float)
@@ -1006,11 +1156,24 @@ def dashboard_view():
 def dashboard_login():
     global dashboard_passcode
     if request.method == "POST":
+        ip = request.remote_addr or "unknown"
+        remaining = _login_locked_out(ip)
+        if remaining:
+            _log_audit("Login Blocked", f"Too many failed passcode attempts from {ip}", "Security")
+            return render_template(
+                "dashboard_login.html",
+                error=f"Too many failed attempts. Try again in {remaining // 60 + 1} minute(s)."), 429
+
         code_entered = request.form.get("passcode", "").strip()
-        if code_entered == dashboard_passcode:
+        if _check_passcode(code_entered):
+            _clear_login_failures(ip)
+            session.permanent = True
             session["dashboard_authorized"] = True
             return redirect("/dashboard")
-        return render_template("dashboard_login.html", error="Invalid passcode.")
+
+        _record_login_failure(ip)
+        _log_audit("Login Failed", f"Invalid passcode from {ip}", "Security")
+        return render_template("dashboard_login.html", error="Invalid passcode."), 401
     return render_template("dashboard_login.html")
 
 
@@ -1042,9 +1205,13 @@ def save_sharing_settings():
     if sharing not in ["passcode", "public", "disabled"]:
         return jsonify(message="Invalid sharing mode."), 400
         
-    dashboard_sharing = sharing
     if passcode:
+        if len(passcode) < 4:
+            return jsonify(message="Passcode must be at least 4 characters."), 400
         dashboard_passcode = passcode
+    if sharing == "public":
+        _log_audit("Sharing Changed", "Dashboard set to PUBLIC (no passcode required)", "Security")
+    dashboard_sharing = sharing
         
     socketio.emit("sharing_updated", {})
     return jsonify(message="Dashboard sharing settings saved successfully.")
@@ -1303,7 +1470,15 @@ def _send_single_email(sender, password, recipient, subject, body):
         print(f"[notify] Failed to send email to {recipient}: {e}")
 
 
-def _send_single_whatsapp(sid, token, sender_phone, recipient_phone, body):
+def _send_twilio_whatsapp_notify(sid, token, sender_phone, recipient_phone, body):
+    """
+    Fire-and-forget Twilio WhatsApp used by the check-in notification path.
+
+    Kept under a distinct name: a later `_send_single_whatsapp(phone, name,
+    reg_no, ...)` in this module used to shadow this definition, so scan
+    notifications silently called the campaign sender with mismatched
+    positional arguments and never delivered.
+    """
     from twilio.rest import Client
     import re
     try:
@@ -1360,7 +1535,7 @@ def send_scan_notification_async(details, location, timestamp):
         token = cfg.get("twilio_token")
         twilio_phone = cfg.get("twilio_sender")
         if sid and token and twilio_phone:
-            threading.Thread(target=_send_single_whatsapp, args=(sid, token, twilio_phone, phone, body), daemon=True).start()
+            threading.Thread(target=_send_twilio_whatsapp_notify, args=(sid, token, twilio_phone, phone, body), daemon=True).start()
 
     # Send SMS if configured
     if notify_sms and phone:
@@ -2928,9 +3103,17 @@ def create_event():
     return jsonify(message=f"Event '{relative_path}' created successfully.", name=relative_path)
 
 
+# Config keys never sent to the browser. The signing key is what makes a QR
+# payload unforgeable, and nothing in the UI consumes it.
+_CONFIG_SERVER_ONLY_KEYS = {"event_signing_key"}
+
+
 @app.route("/get_config", methods=["GET"])
 def get_config():
-    return jsonify(get_event_config())
+    cfg = dict(get_event_config())
+    for key in _CONFIG_SERVER_ONLY_KEYS:
+        cfg.pop(key, None)
+    return jsonify(cfg)
 
 
 @app.route("/save_config", methods=["POST"])
@@ -2938,6 +3121,10 @@ def save_config():
     data = request.json or {}
     cfg = get_event_config()
     for k, v in data.items():
+        # The browser never receives these, so it must never be able to
+        # overwrite (or blank) them either.
+        if k in _CONFIG_SERVER_ONLY_KEYS:
+            continue
         cfg[k] = v
     save_event_config(cfg)
     return jsonify(message="Configuration saved successfully.")
@@ -3289,9 +3476,23 @@ def _verify_qr_payload(qr_data: str, cfg: dict = None) -> tuple[bool, str]:
     return False, ""
 
 
+def _safe_asset_name(value: str) -> str:
+    """
+    Turn an arbitrary registration number into a filesystem-safe asset stem.
+
+    Registration numbers come from operator-supplied spreadsheets, so they can
+    contain path separators, "..", or characters Windows rejects.  Every
+    generated asset (QR, barcode, ID card, profile photo) is named through this
+    so a crafted roster cannot write outside the event's asset folders.
+    """
+    stem = os.path.basename(str(value or "").strip().replace("\\", "/").rstrip("/"))
+    stem = re.sub(r"[^A-Za-z0-9._-]", "_", stem).strip("._")
+    return stem[:80] or "unnamed"
+
+
 def _generate_qr_for_guest(content_str: str, reg_no: str) -> str:
     qr_dir = get_qr_dir()
-    qr_path = os.path.join(qr_dir, f"{reg_no.strip()}.png")
+    qr_path = os.path.join(qr_dir, f"{_safe_asset_name(reg_no)}.png")
     qr_img = qrcode.make(content_str.strip())
     qr_img.save(qr_path)
     return qr_path
@@ -3306,7 +3507,7 @@ def _generate_barcode_for_guest(reg_no: str) -> str:
     
     cleaned_reg = str(reg_no).strip().upper()
     barcode_dir = get_barcode_dir()
-    barcode_path_no_ext = os.path.join(barcode_dir, cleaned_reg)
+    barcode_path_no_ext = os.path.join(barcode_dir, _safe_asset_name(cleaned_reg))
     b = code_class(cleaned_reg, writer=writer)
     b.save(barcode_path_no_ext, options=options)
     return barcode_path_no_ext + ".png"
@@ -3325,6 +3526,38 @@ def _get_attendee_level(row_dict: dict) -> str:
     return ""
 
 
+def _is_safe_remote_url(url: str) -> bool:
+    """
+    Reject photo URLs that point back at private / loopback / link-local
+    addresses.
+
+    Profile photo links come from operator-uploaded spreadsheets, and the
+    server fetches them itself — without this check a roster row could make the
+    server issue requests to internal services (cloud metadata endpoints,
+    admin panels on the same LAN) and cache the response as an image.
+    """
+    try:
+        import ipaddress
+        from urllib.parse import urlparse
+        parsed = urlparse(url)
+        if parsed.scheme not in ("http", "https"):
+            return False
+        host = parsed.hostname
+        if not host:
+            return False
+        if host.lower() in ("localhost", "metadata.google.internal"):
+            return False
+        infos = _socket.getaddrinfo(host, None)
+        for info in infos:
+            ip = ipaddress.ip_address(info[4][0])
+            if (ip.is_private or ip.is_loopback or ip.is_link_local
+                    or ip.is_reserved or ip.is_multicast):
+                return False
+        return True
+    except Exception:
+        return False
+
+
 def _resolve_profile_photo(reg_no, photo_url_or_path) -> str:
     """
     Given a reg_no and a photo URL or local path, download and cache it locally if it is a Google Drive/web link.
@@ -3335,7 +3568,7 @@ def _resolve_profile_photo(reg_no, photo_url_or_path) -> str:
     # Fallback: if no link/path is passed, check if a cached file exists anyway
     cache_dir = os.path.join(get_qr_dir(), "profile_photos")
     if not photo_url_or_path:
-        local_photo_path = os.path.join(cache_dir, f"photo_{reg_no}.png")
+        local_photo_path = os.path.join(cache_dir, f"photo_{_safe_asset_name(reg_no)}.png")
         if os.path.exists(local_photo_path):
             return local_photo_path
         return ""
@@ -3344,7 +3577,7 @@ def _resolve_profile_photo(reg_no, photo_url_or_path) -> str:
         return photo_url_or_path
         
     os.makedirs(cache_dir, exist_ok=True)
-    cached_path = os.path.join(cache_dir, f"photo_{reg_no}.png")
+    cached_path = os.path.join(cache_dir, f"photo_{_safe_asset_name(reg_no)}.png")
     
     if os.path.exists(cached_path):
         return cached_path
@@ -3366,13 +3599,24 @@ def _resolve_profile_photo(reg_no, photo_url_or_path) -> str:
             download_url = f"https://drive.google.com/uc?export=download&id={file_id}"
             
     if download_url.startswith("http://") or download_url.startswith("https://"):
+        if not _is_safe_remote_url(download_url):
+            print(f"[Profile Photo] Refused to fetch non-public URL: {download_url}")
+            return ""
         try:
             import requests
             print(f"[Profile Photo] Downloading {download_url} to {cached_path}...")
-            r = requests.get(download_url, timeout=15)
+            r = requests.get(download_url, timeout=15, stream=True)
             if r.status_code == 200:
+                # Cap the download so one bad link cannot fill the disk.
+                max_bytes = 10 * 1024 * 1024
+                body = b""
+                for chunk in r.iter_content(65536):
+                    body += chunk
+                    if len(body) > max_bytes:
+                        print(f"[Profile Photo] {download_url} exceeded 10 MB; discarded.")
+                        return ""
                 with open(cached_path, "wb") as f:
-                    f.write(r.content)
+                    f.write(body)
                 return cached_path
         except Exception as e:
             print(f"[Profile Photo] Failed to download {download_url}: {e}")
@@ -4011,8 +4255,9 @@ def _generate_id_card(name: str, reg_no: str, phone: str, email: str, uid: str, 
                 
                 id_dir = os.path.join(get_qr_dir(), "id_cards")
                 os.makedirs(id_dir, exist_ok=True)
-                png_path = os.path.join(id_dir, f"id_{reg_no}.png")
-                pdf_path = os.path.join(id_dir, f"id_{reg_no}.pdf")
+                safe_reg = _safe_asset_name(reg_no)
+                png_path = os.path.join(id_dir, f"id_{safe_reg}.png")
+                pdf_path = os.path.join(id_dir, f"id_{safe_reg}.pdf")
                 
                 from html2image import Html2Image
                 hti = _get_hti(output_path=id_dir)
@@ -4030,7 +4275,7 @@ def _generate_id_card(name: str, reg_no: str, phone: str, email: str, uid: str, 
                     )
                 else:
                     hti.output_path = id_dir
-                hti.screenshot(html_str=full_document, save_as=f"id_{reg_no}.png", size=(340, 540))
+                hti.screenshot(html_str=full_document, save_as=f"id_{safe_reg}.png", size=(340, 540))
                 
                 if os.path.exists(png_path):
                     from PIL import Image
@@ -4252,8 +4497,9 @@ def _generate_id_card(name: str, reg_no: str, phone: str, email: str, uid: str, 
         id_dir = os.path.join(get_qr_dir(), "id_cards")
         os.makedirs(id_dir, exist_ok=True)
         
-        png_path = os.path.join(id_dir, f"id_{reg_no}.png")
-        pdf_path = os.path.join(id_dir, f"id_{reg_no}.pdf")
+        safe_reg = _safe_asset_name(reg_no)
+        png_path = os.path.join(id_dir, f"id_{safe_reg}.png")
+        pdf_path = os.path.join(id_dir, f"id_{safe_reg}.pdf")
         
         card_rgb = card.convert("RGB")
         card_rgb.save(png_path, "PNG")
@@ -4350,7 +4596,31 @@ def _generate_id_card(name: str, reg_no: str, phone: str, email: str, uid: str, 
             accent_rgb = r_color
             break
             
-    # Draw Vertical Linear Gradient Background
+    # ── Alpha-safe drawing helpers ───────────────────────────────────────────
+    # PIL's ImageDraw *replaces* pixels (including the alpha channel) instead of
+    # blending them.  Every translucent accent below is therefore drawn onto its
+    # own transparent layer and alpha-composited onto the card, otherwise a
+    # fill of (255, 215, 0, 25) ends up as solid gold once the RGBA card is
+    # flattened to RGB for PNG/PDF output.
+    def _new_layer():
+        layer = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+        return layer, ImageDraw.Draw(layer)
+
+    def _flatten(layer):
+        nonlocal card, draw
+        card = Image.alpha_composite(card, layer)
+        draw = ImageDraw.Draw(card)
+
+    def _rgba(color, alpha=None):
+        """Normalise a 3- or 4-tuple to RGBA, optionally overriding alpha."""
+        c = tuple(int(v) for v in color[:4])
+        if len(c) == 3:
+            c = c + (255,)
+        if alpha is not None:
+            c = (c[0], c[1], c[2], int(alpha))
+        return c
+
+    # Draw Vertical Linear Gradient Background (fully opaque base)
     bg_start = cfg_theme["bg_start"]
     bg_end = cfg_theme["bg_end"]
     for y in range(height):
@@ -4359,72 +4629,161 @@ def _generate_id_card(name: str, reg_no: str, phone: str, email: str, uid: str, 
         g = int(bg_start[1] * (1 - ratio) + bg_end[1] * ratio)
         b = int(bg_start[2] * (1 - ratio) + bg_end[2] * ratio)
         draw.line([(0, y), (width, y)], fill=(r, g, b, 255))
-        
-    # Draw Theme-specific Shapes
+
+    # Draw Theme-specific Shapes (translucent -> composited layer)
     default_accent = cfg_theme["default_accent"]
+    shape_layer, shape_draw = _new_layer()
     for s in cfg_theme["shapes"]:
         stype = s["type"]
         orig_color = s["color"]
-        
+
         # Replace default accent colors with role-specific accent colors
         if len(orig_color) == 4:
             cr, cg, cb, ca = orig_color
-            if (cr, cg, cb) == default_accent or (cr, cg, cb) == (0, 245, 160):
+            if (cr, cg, cb) == tuple(default_accent[:3]) or (cr, cg, cb) == (0, 245, 160):
                 color = (accent_rgb[0], accent_rgb[1], accent_rgb[2], ca)
             else:
                 color = orig_color
         else:
-            color = orig_color
-            
-        if stype == "arc":
-            draw.arc(s["box"], start=0, end=360, fill=color, width=s.get("width", 1))
-        elif stype == "circle":
-            draw.ellipse(s["box"], fill=color)
-        elif stype == "line":
-            draw.line(s["coords"], fill=color, width=s.get("width", 1))
-        elif stype == "rectangle":
-            draw.rectangle(s["box"], fill=color)
-            
-    # Draw Borders
-    draw.rectangle([15, 15, width - 15, height - 15], outline=(255, 255, 255, 15), width=2)
+            color = _rgba(orig_color)
+
+        try:
+            if stype == "arc":
+                shape_draw.arc(s["box"], start=0, end=360, fill=color, width=s.get("width", 1))
+            elif stype == "circle":
+                shape_draw.ellipse(s["box"], fill=color)
+            elif stype == "line":
+                shape_draw.line(s["coords"], fill=color, width=s.get("width", 1))
+            elif stype == "rectangle":
+                shape_draw.rectangle(s["box"], fill=color)
+        except Exception as e_shape:
+            print(f"[ID Card] Skipped theme shape {stype}: {e_shape}")
+    _flatten(shape_layer)
+
+    # Draw Borders (hairline, translucent)
+    border_layer, border_draw = _new_layer()
+    border_draw.rectangle([15, 15, width - 15, height - 15], outline=(255, 255, 255, 40), width=2)
     if theme == "midnight_gold":
-        draw.rectangle([25, 25, width - 25, height - 25], outline=cfg_theme["border"], width=1)
+        border_draw.rectangle([25, 25, width - 25, height - 25], outline=_rgba(cfg_theme["border"]), width=1)
     else:
-        draw.rectangle([25, 25, width - 25, height - 25], outline=(accent_rgb[0], accent_rgb[1], accent_rgb[2], 45), width=1)
-        
-    # 4. Load Fonts
-    try:
-        font_large = ImageFont.truetype("arial.ttf", 36)
-        font_title = ImageFont.truetype("arial.ttf", 24)
-        font_sub = ImageFont.truetype("arial.ttf", 16)
-        font_mono = ImageFont.truetype("cour.ttf", 18)
-    except IOError:
-        font_large = ImageFont.load_default()
-        font_title = ImageFont.load_default()
-        font_sub = ImageFont.load_default()
-        font_mono = ImageFont.load_default()
-        
-    # 5. Header / Event Details
+        border_draw.rectangle([25, 25, width - 25, height - 25],
+                              outline=(accent_rgb[0], accent_rgb[1], accent_rgb[2], 70), width=1)
+    _flatten(border_layer)
+
+    # 4. Load Fonts — resolve against the platform's real font files so the card
+    #    never silently degrades to PIL's 11px bitmap default.
+    def _load_font(size: int, bold: bool = False, mono: bool = False):
+        if mono:
+            candidates = ["consola.ttf", "cour.ttf", "DejaVuSansMono.ttf",
+                          "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf",
+                          "/System/Library/Fonts/Menlo.ttc"]
+        elif bold:
+            candidates = ["arialbd.ttf", "segoeuib.ttf", "DejaVuSans-Bold.ttf",
+                          "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+                          "/System/Library/Fonts/Helvetica.ttc"]
+        else:
+            candidates = ["arial.ttf", "segoeui.ttf", "DejaVuSans.ttf",
+                          "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+                          "/System/Library/Fonts/Helvetica.ttc"]
+        for cand in candidates:
+            paths = [cand] if os.path.isabs(cand) else [os.path.join("C:\\Windows\\Fonts", cand), cand]
+            for path in paths:
+                try:
+                    return ImageFont.truetype(path, size)
+                except Exception:
+                    continue
+        try:
+            return ImageFont.load_default(size=size)
+        except TypeError:
+            return ImageFont.load_default()
+
+    font_large  = _load_font(38, bold=True)
+    font_title  = _load_font(24)
+    font_sub    = _load_font(16)
+    font_label  = _load_font(15, bold=True)
+    font_mono   = _load_font(18, mono=True)
+
+    text_primary   = _rgba(cfg_theme["text_primary"])
+    text_secondary = _rgba(cfg_theme["text_secondary"])
+
+    def _fit_text(txt: str, font, max_w: int) -> str:
+        """Ellipsise a string so it never overruns the card edge."""
+        txt = str(txt)
+        if draw.textlength(txt, font=font) <= max_w:
+            return txt
+        while txt and draw.textlength(txt + "...", font=font) > max_w:
+            txt = txt[:-1]
+        return txt + "..."
+
+    # 5. Header — role pill, event title, divider
     badge_text = f"{role_label} PASS"
-    draw.rounded_rectangle([width//2 - 110, 45, width//2 + 110, 75], radius=15, 
-                           fill=(accent_rgb[0], accent_rgb[1], accent_rgb[2], 25), 
-                           outline=(accent_rgb[0], accent_rgb[1], accent_rgb[2], 100), width=1)
-    draw.text((width//2, 60), badge_text, fill=(accent_rgb[0], accent_rgb[1], accent_rgb[2], 255), font=font_sub, anchor="mm")
-    
-    text_primary = cfg_theme["text_primary"]
-    text_secondary = cfg_theme["text_secondary"]
-    
+    pill_w = max(220, int(draw.textlength(badge_text, font=font_label)) + 60)
+    pill_layer, pill_draw = _new_layer()
+    pill_draw.rounded_rectangle(
+        [width // 2 - pill_w // 2, 44, width // 2 + pill_w // 2, 78], radius=17,
+        fill=(accent_rgb[0], accent_rgb[1], accent_rgb[2], 38),
+        outline=(accent_rgb[0], accent_rgb[1], accent_rgb[2], 130), width=1)
+    _flatten(pill_layer)
+    draw.text((width // 2, 61), badge_text,
+              fill=(accent_rgb[0], accent_rgb[1], accent_rgb[2], 255),
+              font=font_label, anchor="mm")
+
     header_override = cfg.get("id_card_header", "").strip()
     header_text = header_override if header_override else event_name
-    draw.text((width//2, 110), str(header_text).upper(), fill=text_primary, font=font_title, anchor="mm")
-    draw.line([(100, 150), (width - 100, 150)], fill=(text_primary[0], text_primary[1], text_primary[2], 30), width=1)
-    
-    # 6. Attendee Details
-    draw.text((width//2, 210), str(name), fill=text_primary, font=font_large, anchor="mm")
-    
-    details_y = 290
-    spacing = 35
-    
+    draw.text((width // 2, 112), _fit_text(str(header_text).upper(), font_title, width - 120),
+              fill=text_primary, font=font_title, anchor="mm")
+
+    divider_layer, divider_draw = _new_layer()
+    divider_draw.line([(100, 150), (width - 100, 150)],
+                      fill=(text_primary[0], text_primary[1], text_primary[2], 60), width=1)
+    _flatten(divider_layer)
+
+    # 6. Profile photo (circular avatar) — optional, drives the vertical rhythm
+    photo_path = ""
+    try:
+        photo_path = _resolve_profile_photo(reg_no, profile_photo)
+    except Exception as e_photo:
+        print(f"[ID Card] Profile photo lookup failed for {reg_no}: {e_photo}")
+
+    has_photo = bool(photo_path) and os.path.exists(photo_path)
+    if has_photo:
+        try:
+            avatar_size = 130
+            avatar_x = width // 2 - avatar_size // 2
+            avatar_y = 168
+            avatar = Image.open(photo_path).convert("RGBA")
+            # Cover-crop to a square before masking so faces are not squashed.
+            side = min(avatar.width, avatar.height)
+            avatar = avatar.crop(((avatar.width - side) // 2, (avatar.height - side) // 2,
+                                  (avatar.width + side) // 2, (avatar.height + side) // 2))
+            avatar = avatar.resize((avatar_size, avatar_size), Image.Resampling.LANCZOS)
+
+            mask = Image.new("L", (avatar_size * 4, avatar_size * 4), 0)
+            ImageDraw.Draw(mask).ellipse([0, 0, avatar_size * 4 - 1, avatar_size * 4 - 1], fill=255)
+            mask = mask.resize((avatar_size, avatar_size), Image.Resampling.LANCZOS)
+
+            ring_layer, ring_draw = _new_layer()
+            ring_draw.ellipse([avatar_x - 5, avatar_y - 5,
+                               avatar_x + avatar_size + 5, avatar_y + avatar_size + 5],
+                              outline=(accent_rgb[0], accent_rgb[1], accent_rgb[2], 200), width=3)
+            _flatten(ring_layer)
+            card.paste(avatar, (avatar_x, avatar_y), mask)
+            draw = ImageDraw.Draw(card)
+        except Exception as e_avatar:
+            print(f"[ID Card] Could not render avatar for {reg_no}: {e_avatar}")
+            has_photo = False
+
+    if has_photo:
+        name_y, details_y, spacing = 342, 392, 32
+        qr_size, qr_top, footer_y = 200, 592, height - 42
+    else:
+        name_y, details_y, spacing = 212, 292, 35
+        qr_size, qr_top, footer_y = 250, 548, height - 42
+
+    # 7. Attendee name & details
+    draw.text((width // 2, name_y), _fit_text(name, font_large, width - 120),
+              fill=text_primary, font=font_large, anchor="mm")
+
     details = []
     if cfg.get("id_card_show_reg", True):
         details.append((cfg.get("id_card_label_reg", "REGISTRATION:"), str(reg_no)))
@@ -4436,41 +4795,54 @@ def _generate_id_card(name: str, reg_no: str, phone: str, email: str, uid: str, 
         details.append((cfg.get("id_card_label_uid", "UNIQUE ID:"), str(uid)))
     if level and cfg.get("id_card_show_pass", True):
         details.append((cfg.get("id_card_label_pass", "PASS TYPE:"), str(level).upper()))
-        
+
+    label_x, value_x = 78, 250
     for label, val in details:
-        if val and val != "None" and val != "":
-            draw.text((80, details_y), label, fill=(accent_rgb[0], accent_rgb[1], accent_rgb[2], 180), font=font_sub)
-            draw.text((230, details_y), val, fill=text_secondary, font=font_sub)
+        if val and val not in ("None", "nan", ""):
+            draw.text((label_x, details_y), str(label),
+                      fill=(accent_rgb[0], accent_rgb[1], accent_rgb[2], 220), font=font_label)
+            draw.text((value_x, details_y), _fit_text(val, font_sub, width - value_x - 70),
+                      fill=text_secondary, font=font_sub)
             details_y += spacing
-            
-    # 7. Embed QR Code Image
+
+    # Never let a long detail list collide with the QR panel.
+    qr_top = max(qr_top, details_y + 24)
+    qr_bottom_limit = footer_y - 30 if cfg.get("id_card_footer", "").strip() else height - 40
+    qr_size = max(150, min(qr_size, qr_bottom_limit - qr_top - 20))
+
+    # 8. Embed QR Code Image on an opaque white panel (scanner contrast)
     if qr_path and os.path.exists(qr_path):
-        qr_img = Image.open(qr_path).convert("RGBA")
-        qr_img = qr_img.resize((240, 240), Image.Resampling.LANCZOS)
-        
-        qr_x1 = width//2 - 130
-        qr_y1 = height - 350
-        qr_x2 = width//2 + 130
-        qr_y2 = height - 90
-        
-        draw.rounded_rectangle([qr_x1, qr_y1, qr_x2, qr_y2], radius=15, fill=(255, 255, 255, 255))
-        card.paste(qr_img, (width//2 - 120, height - 340), qr_img)
-        
+        try:
+            qr_img = Image.open(qr_path).convert("RGBA")
+            qr_img = qr_img.resize((qr_size, qr_size), Image.Resampling.LANCZOS)
+            pad = 12
+            qr_x = width // 2 - qr_size // 2
+            draw.rounded_rectangle(
+                [qr_x - pad, qr_top - pad, qr_x + qr_size + pad, qr_top + qr_size + pad],
+                radius=16, fill=(255, 255, 255, 255))
+            card.paste(qr_img, (qr_x, qr_top), qr_img)
+            draw = ImageDraw.Draw(card)
+        except Exception as e_qr:
+            print(f"[ID Card] Could not embed QR for {reg_no}: {e_qr}")
+
     footer_text = cfg.get("id_card_footer", "").strip()
     if footer_text:
-        draw.text((width//2, height - 50), str(footer_text).upper(), fill=(text_secondary[0], text_secondary[1], text_secondary[2], 180), font=font_sub, anchor="mm")
-        
-    # 8. Save Files
+        draw.text((width // 2, footer_y), _fit_text(str(footer_text).upper(), font_sub, width - 100),
+                  fill=(text_secondary[0], text_secondary[1], text_secondary[2], 200),
+                  font=font_sub, anchor="mm")
+
+    # 9. Save Files
     id_dir = os.path.join(get_qr_dir(), "id_cards")
     os.makedirs(id_dir, exist_ok=True)
-    
-    png_path = os.path.join(id_dir, f"id_{reg_no}.png")
-    pdf_path = os.path.join(id_dir, f"id_{reg_no}.pdf")
-    
+
+    safe_reg = _safe_asset_name(reg_no)
+    png_path = os.path.join(id_dir, f"id_{safe_reg}.png")
+    pdf_path = os.path.join(id_dir, f"id_{safe_reg}.pdf")
+
     card_rgb = card.convert("RGB")
     card_rgb.save(png_path, "PNG")
-    card_rgb.save(pdf_path, "PDF", resolution=100.0)
-    
+    card_rgb.save(pdf_path, "PDF", resolution=300.0)
+
     return pdf_path, png_path
 
 
@@ -5767,20 +6139,6 @@ def export_audit_log():
         )
 
 
-@app.route("/help_content")
-def help_content():
-    """Return the system documentation HELP.md as JSON."""
-    help_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "HELP.md")
-    if os.path.exists(help_file):
-        try:
-            with open(help_file, "r", encoding="utf-8") as f:
-                content = f.read()
-            return jsonify(content=content)
-        except Exception as e:
-            return jsonify(content=f"Error reading HELP.md: {str(e)}"), 500
-    return jsonify(content="HELP.md not found on server."), 404
-
-
 
 
 
@@ -6694,6 +7052,40 @@ def send_id_card_single():
     return jsonify(success=success, message=final_msg), (200 if success else 400)
 
 
+# ── Upload validation ────────────────────────────────────────────────────────
+ALLOWED_IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"}
+
+
+def _validate_image_upload(file_storage) -> tuple[bool, str, str]:
+    """
+    Verify an uploaded file really is an image before it lands in a
+    web-served directory.
+
+    Extension checks alone are not enough: static/uploads is served by Flask,
+    so an ".html" or ".svg" payload uploaded there would execute in the
+    operator's browser. Pillow is asked to decode the bytes, which rejects
+    anything that is not a real raster image.
+
+    Returns (ok, message, normalised_extension).
+    """
+    filename = (file_storage.filename or "").strip()
+    ext = os.path.splitext(filename)[1].lower()
+    if ext not in ALLOWED_IMAGE_EXTENSIONS:
+        return False, f"Unsupported image type '{ext or filename}'. Allowed: PNG, JPG, GIF, WEBP, BMP.", ""
+    try:
+        from PIL import Image as _PILImage
+        pos = file_storage.stream.tell()
+        _PILImage.open(file_storage.stream).verify()
+        file_storage.stream.seek(pos)
+    except Exception:
+        try:
+            file_storage.stream.seek(0)
+        except Exception:
+            pass
+        return False, "That file is not a readable image.", ""
+    return True, "", ext
+
+
 @app.route("/upload_profile_photo/<reg_no>", methods=["POST"])
 def upload_profile_photo(reg_no):
     reg_no = reg_no.strip()
@@ -6703,10 +7095,14 @@ def upload_profile_photo(reg_no):
     if file.filename == '':
         return jsonify(success=False, message="No selected file."), 400
         
+    ok, err, _ext = _validate_image_upload(file)
+    if not ok:
+        return jsonify(success=False, message=err), 400
+
     if file:
         cache_dir = os.path.join(get_qr_dir(), "profile_photos")
         os.makedirs(cache_dir, exist_ok=True)
-        cached_path = os.path.join(cache_dir, f"photo_{reg_no}.png")
+        cached_path = os.path.join(cache_dir, f"photo_{_safe_asset_name(reg_no)}.png")
         
         file.save(cached_path)
         
@@ -6762,6 +7158,10 @@ def upload_global_logo():
     if file.filename == '':
         return jsonify(success=False, message="No selected file."), 400
         
+    ok, err, _ext = _validate_image_upload(file)
+    if not ok:
+        return jsonify(success=False, message=err), 400
+
     if file:
         upload_dir = os.path.join(BASE_DIR, "static", "uploads")
         os.makedirs(upload_dir, exist_ok=True)
@@ -6778,14 +7178,20 @@ def upload_designer_asset():
     if file.filename == '':
         return jsonify(success=False, message="No selected file."), 400
     
+    ok, err, ext = _validate_image_upload(file)
+    if not ok:
+        return jsonify(success=False, message=err), 400
+
     if file:
         upload_dir = os.path.join(BASE_DIR, "static", "uploads", "assets")
         os.makedirs(upload_dir, exist_ok=True)
         import werkzeug.utils
         import time
         filename = werkzeug.utils.secure_filename(file.filename)
-        if not filename:
-            filename = f"asset_{int(time.time())}.png"
+        # secure_filename() can strip a name down to nothing, and it does not
+        # constrain the extension — force a validated image extension.
+        stem = os.path.splitext(filename)[0] or f"asset_{int(time.time())}"
+        filename = f"{stem}{ext}"
         file_path = os.path.join(upload_dir, filename)
         file.save(file_path)
         url = f"/static/uploads/assets/{filename}"

@@ -27,3 +27,6 @@ test_html2image.png
 feature_diff.txt
 html_diff.txt
 results.txt
+
+# Persisted Flask session signing key — never commit
+.secret_key
