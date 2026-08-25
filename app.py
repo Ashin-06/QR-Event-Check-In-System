@@ -360,7 +360,37 @@ EVENTS_DIR       = os.path.join(BASE_DIR, "events")
 os.makedirs(EVENTS_DIR, exist_ok=True)
 SCAN_COL_NAME    = "Scanned Status"
 
-active_event = "Default Event"
+def _load_persisted_active_event() -> str:
+    """
+    Restore the event that was active before the last shutdown.
+
+    The active event used to be an in-memory global reset to "Default Event" on
+    every restart. Mid-event that is a data-integrity problem, not a cosmetic
+    one: after a crash or a reboot the gate silently starts writing check-ins
+    into the wrong roster, and nobody is told.
+    """
+    try:
+        state_path = os.path.join(EVENTS_DIR, ".active_event")
+        if os.path.exists(state_path):
+            name = open(state_path, "r", encoding="utf-8").read().strip()
+            # Only trust it if the event folder is still there.
+            if name and os.path.isdir(os.path.join(EVENTS_DIR, name)):
+                print(f"[*] Restored active event: {name}")
+                return name
+    except Exception as e:
+        print(f"[!] Could not restore active event ({e}); using Default Event.")
+    return "Default Event"
+
+
+def _persist_active_event(name: str) -> None:
+    try:
+        with open(os.path.join(EVENTS_DIR, ".active_event"), "w", encoding="utf-8") as f:
+            f.write(str(name or "").strip())
+    except Exception as e:
+        print(f"[!] Could not persist active event: {e}")
+
+
+active_event = _load_persisted_active_event()
 
 def get_active_event_path() -> str:
     global active_event
@@ -588,6 +618,8 @@ def get_event_config() -> dict:
         "id_card_label_phone": "PHONE:",
         "id_card_label_uid": "UNIQUE ID:",
         "id_card_label_pass": "PASS TYPE:",
+        # Roster column names to print on the badge, e.g. ["Department", "Year"].
+        "id_card_extra_fields": [],
         "group_column": "",
         "subgroup_templates": {},
         "sms_template": "Hi {Name},\n\nYour registration QR Code for {Event} is ready! Present it at the entrance.\n\nRegistration: {Registration Number}\n\nDownload QR here: {QR_URL}",
@@ -970,6 +1002,27 @@ def _rebuild_highlighted() -> None:
                 os.unlink(staging)
             except OSError:
                 pass
+
+
+def _read_roster_df(source, engine: str = "openpyxl"):
+    """
+    Read a roster spreadsheet as text.
+
+    pandas infers column types, and a column of E.164 phone numbers looks
+    numeric to it -- int("+919876543210") is valid Python, so the whole column
+    became int64 and every "+" was silently dropped, breaking WhatsApp/SMS
+    delivery. Large registration numbers hit the same coercion and picked up a
+    ".0" suffix.
+
+    A roster is a text record, so every cell is read as a string and callers
+    normalise from there.
+    """
+    return pd.read_excel(source, engine=engine, dtype=str)
+
+
+def _read_roster_csv(source):
+    """CSV counterpart of _read_roster_df -- same reasoning."""
+    return pd.read_csv(source, dtype=str)
 
 
 def _clean_val(val, default="") -> str:
@@ -2582,7 +2635,7 @@ def bulk_notify():
 
     try:
         with lock:
-            df_xl = pd.read_excel(excel_file, engine="openpyxl")
+            df_xl = _read_roster_df(excel_file)
         df_xl.columns = df_xl.columns.astype(str).str.strip()
         col_map = {c.lower(): c for c in df_xl.columns}
 
@@ -2807,7 +2860,7 @@ def get_registry():
             return jsonify([])
             
         with lock:
-            df_xl = pd.read_excel(excel_file, engine="openpyxl")
+            df_xl = _read_roster_df(excel_file)
 
         df_xl.columns = df_xl.columns.astype(str).str.strip()
         col_map = {c.lower(): c for c in df_xl.columns}
@@ -2878,7 +2931,7 @@ def active_event_columns():
             return jsonify(columns=[])
         
         with lock:
-            df_xl = pd.read_excel(excel_file, engine="openpyxl")
+            df_xl = _read_roster_df(excel_file)
         
         df_xl.columns = df_xl.columns.astype(str).str.strip()
         system_cols = [
@@ -2904,7 +2957,7 @@ def get_subgroups():
         return jsonify(subgroups=[])
     try:
         with lock:
-            df_xl = pd.read_excel(excel_file, engine="openpyxl")
+            df_xl = _read_roster_df(excel_file)
         df_xl.columns = df_xl.columns.astype(str).str.strip()
         matched_col = None
         for col in df_xl.columns:
@@ -3258,6 +3311,7 @@ def select_event():
         return jsonify(message="Invalid path."), 400
         
     active_event = clean_name
+    _persist_active_event(active_event)
     load_active_event()
     
     _emit_managers("registry_updated", {})
@@ -3476,6 +3530,16 @@ def tunnel_qr():
     except Exception as e:
         print(f"[tunnel_qr] Error generating local QR: {e}")
         return "Internal server error", 500
+
+
+# Column keys the system manages itself; an imported roster never overwrites
+# these, and they are never re-created as "custom" columns.
+_RESERVED_COLUMN_KEYS = {
+    "name", "email address", "registration number", "phone number",
+    "unique id", "qr", "barcode", "qr code image", "barcode image",
+    SCAN_COL_NAME.lower(), "email sent status", "whatsapp sent status",
+    "sms sent status", "scan timestamps", "scan devices", "scan count",
+}
 
 
 def _get_or_create_headers(ws) -> tuple[dict[str, int], bool]:
@@ -3932,7 +3996,83 @@ def _generate_initials_image(name: str) -> str:
     return f"data:image/png;base64,{img_str}"
 
 
-def _generate_id_card(name: str, reg_no: str, phone: str, email: str, uid: str, qr_path: str, event_name: str, level: str = "", cfg: dict = None, profile_photo: str = "", theme: str = "") -> tuple[str, str]:
+def _build_card_context(name: str, reg_no: str, email: str, phone: str, uid: str,
+                        level: str, event_name: str, row_data: dict = None) -> dict:
+    """
+    Build the placeholder table for an ID badge.
+
+    Badge templates used to resolve a hardcoded list of seven placeholders, so a
+    roster column that was not one of them — "Department", "Blood Group",
+    "Seat No", "College" — could not be shown on a badge at all. Every event
+    imports a different spreadsheet, so the table is now built from the
+    attendee's actual row: any column header works as {Column Name}.
+
+    Lookup is case- and space-insensitive, so {department}, {Department} and
+    {DEPARTMENT} all resolve.
+    """
+    name_parts = str(name or "").strip().split()
+    if len(name_parts) > 1:
+        surname = name_parts[-1]
+        given_names = " ".join(name_parts[:-1])
+    else:
+        surname = str(name or "")
+        given_names = ""
+
+    ctx = {}
+
+    # Roster columns first, so the built-ins below always win on a name clash.
+    for key, val in (row_data or {}).items():
+        cleaned = _clean_val(val)
+        if cleaned and cleaned.lower() not in ("nan", "none"):
+            ctx[_norm_placeholder(key)] = cleaned
+
+    builtins = {
+        "Name": name,
+        "Surname": surname,
+        "Given Names": given_names,
+        "Registration Number": reg_no,
+        "Email Address": email,
+        "Email": email,
+        "Phone Number": phone,
+        "Phone": phone,
+        "Unique ID": uid,
+        "Pass Type": level,
+        "Event": event_name,
+    }
+    for key, val in builtins.items():
+        ctx[_norm_placeholder(key)] = str(val or "")
+    return ctx
+
+
+def _norm_placeholder(key: str) -> str:
+    """Normalise a placeholder/column name for case- and space-insensitive lookup."""
+    return re.sub(r"[\s_]+", " ", str(key or "").strip().lower())
+
+
+_PLACEHOLDER_RE = re.compile(r"\{([^{}]{1,80})\}")
+
+
+def _resolve_card_text(text: str, ctx: dict, keep_unknown: bool = False) -> str:
+    """
+    Substitute {Placeholder} tokens from the badge context.
+
+    Unknown placeholders resolve to an empty string by default: a badge showing
+    a literal "{Department}" because this event's roster has no such column
+    looks broken, whereas an empty slot just reads as absent.
+    """
+    if not text or "{" not in str(text):
+        return str(text or "")
+
+    def _sub(m):
+        val = ctx.get(_norm_placeholder(m.group(1)))
+        if val is None:
+            return m.group(0) if keep_unknown else ""
+        return str(val)
+
+    return _PLACEHOLDER_RE.sub(_sub, str(text))
+
+
+def _generate_id_card(name: str, reg_no: str, phone: str, email: str, uid: str, qr_path: str, event_name: str, level: str = "", cfg: dict = None, profile_photo: str = "", theme: str = "", row_data: dict = None) -> tuple[str, str]:
     """
     Generates a beautifully styled vertical ID card (600x900 pixels) with a dark gradient,
     abstract design accents, event info, attendee details, and the embedded QR code.
@@ -3941,6 +4081,10 @@ def _generate_id_card(name: str, reg_no: str, phone: str, email: str, uid: str, 
     """
     from PIL import Image, ImageDraw, ImageFont
     import re
+
+    # Placeholder table: built-ins plus every column from this event's roster.
+    card_ctx = _build_card_context(name, reg_no, email, phone, uid, level,
+                                   event_name, row_data)
     
     # 1. Base Setup
     width, height = 600, 900
@@ -4284,15 +4428,10 @@ def _generate_id_card(name: str, reg_no: str, phone: str, email: str, uid: str, 
                 else:
                     surname = name
                     given_names = ""
-                resolved_html = resolved_html.replace("{Surname}", surname)
-                resolved_html = resolved_html.replace("{Given Names}", given_names)
-                resolved_html = resolved_html.replace("{Name}", name)
-                resolved_html = resolved_html.replace("{Registration Number}", reg_no)
-                resolved_html = resolved_html.replace("{Email Address}", email)
-                resolved_html = resolved_html.replace("{Phone Number}", phone)
-                resolved_html = resolved_html.replace("{Unique ID}", uid)
-                resolved_html = resolved_html.replace("{Pass Type}", level)
-                resolved_html = resolved_html.replace("{Event}", event_name)
+                # Any roster column works as {Column Name}; the asset
+                # placeholders below are substituted afterwards, so they are
+                # preserved here rather than blanked.
+                resolved_html = _resolve_card_text(resolved_html, card_ctx, keep_unknown=True)
                 
                 # Resolve QR code base64
                 qr_base64 = ""
@@ -4595,14 +4734,7 @@ def _generate_id_card(name: str, reg_no: str, phone: str, email: str, uid: str, 
                 align = f.get("align", "center")
                 
                 # Resolve text value
-                resolved_text = text_tpl
-                resolved_text = resolved_text.replace("{Name}", name)
-                resolved_text = resolved_text.replace("{Registration Number}", reg_no)
-                resolved_text = resolved_text.replace("{Email Address}", email)
-                resolved_text = resolved_text.replace("{Phone Number}", phone)
-                resolved_text = resolved_text.replace("{Unique ID}", uid)
-                resolved_text = resolved_text.replace("{Pass Type}", level)
-                resolved_text = resolved_text.replace("{Event}", event_name)
+                resolved_text = _resolve_card_text(text_tpl, card_ctx)
                 
                 # Tracking (letter spacing)
                 tracking = f.get("tracking", "normal").lower()
@@ -4933,28 +5065,33 @@ def _generate_id_card(name: str, reg_no: str, phone: str, email: str, uid: str, 
             txt = txt[:-1]
         return txt + "..."
 
-    # 5. Header — role pill, event title, divider
-    badge_text = f"{role_label} PASS"
-    pill_w = max(220, int(draw.textlength(badge_text, font=font_label)) + 60)
-    pill_layer, pill_draw = _new_layer()
-    pill_draw.rounded_rectangle(
-        [width // 2 - pill_w // 2, 44, width // 2 + pill_w // 2, 78], radius=17,
-        fill=(accent_rgb[0], accent_rgb[1], accent_rgb[2], 38),
-        outline=(accent_rgb[0], accent_rgb[1], accent_rgb[2], 130), width=1)
-    _flatten(pill_layer)
-    draw.text((width // 2, 61), badge_text,
-              fill=(accent_rgb[0], accent_rgb[1], accent_rgb[2], 255),
-              font=font_label, anchor="mm")
+    # 5. Header band — event name reversed out of an accent bar
+    band_h = 96
+    band_layer, band_draw = _new_layer()
+    band_draw.rectangle([0, 0, width, band_h],
+                        fill=(accent_rgb[0], accent_rgb[1], accent_rgb[2], 30))
+    band_draw.rectangle([0, band_h - 3, width, band_h],
+                        fill=(accent_rgb[0], accent_rgb[1], accent_rgb[2], 190))
+    _flatten(band_layer)
 
-    header_override = cfg.get("id_card_header", "").strip()
+    header_override = _resolve_card_text(cfg.get("id_card_header", "").strip(), card_ctx)
     header_text = header_override if header_override else event_name
-    draw.text((width // 2, 112), _fit_text(str(header_text).upper(), font_title, width - 120),
+    draw.text((width // 2, band_h // 2 - 6), _fit_text(str(header_text).upper(), font_title, width - 110),
               fill=text_primary, font=font_title, anchor="mm")
 
-    divider_layer, divider_draw = _new_layer()
-    divider_draw.line([(100, 150), (width - 100, 150)],
-                      fill=(text_primary[0], text_primary[1], text_primary[2], 60), width=1)
-    _flatten(divider_layer)
+    # Role pill, sitting just under the band
+    badge_text = f"{role_label} PASS"
+    pill_w = max(200, int(draw.textlength(badge_text, font=font_label)) + 56)
+    pill_top, pill_bot = band_h + 22, band_h + 54
+    pill_layer, pill_draw = _new_layer()
+    pill_draw.rounded_rectangle(
+        [width // 2 - pill_w // 2, pill_top, width // 2 + pill_w // 2, pill_bot], radius=16,
+        fill=(accent_rgb[0], accent_rgb[1], accent_rgb[2], 42),
+        outline=(accent_rgb[0], accent_rgb[1], accent_rgb[2], 150), width=1)
+    _flatten(pill_layer)
+    draw.text((width // 2, (pill_top + pill_bot) // 2), badge_text,
+              fill=(accent_rgb[0], accent_rgb[1], accent_rgb[2], 255),
+              font=font_label, anchor="mm")
 
     # 6. Profile photo (circular avatar) — optional, drives the vertical rhythm
     photo_path = ""
@@ -4966,9 +5103,9 @@ def _generate_id_card(name: str, reg_no: str, phone: str, email: str, uid: str, 
     has_photo = bool(photo_path) and os.path.exists(photo_path)
     if has_photo:
         try:
-            avatar_size = 130
+            avatar_size = 132
             avatar_x = width // 2 - avatar_size // 2
-            avatar_y = 168
+            avatar_y = pill_bot + 26
             avatar = Image.open(photo_path).convert("RGBA")
             # Cover-crop to a square before masking so faces are not squashed.
             side = min(avatar.width, avatar.height)
@@ -4981,26 +5118,27 @@ def _generate_id_card(name: str, reg_no: str, phone: str, email: str, uid: str, 
             mask = mask.resize((avatar_size, avatar_size), Image.Resampling.LANCZOS)
 
             ring_layer, ring_draw = _new_layer()
-            ring_draw.ellipse([avatar_x - 5, avatar_y - 5,
-                               avatar_x + avatar_size + 5, avatar_y + avatar_size + 5],
-                              outline=(accent_rgb[0], accent_rgb[1], accent_rgb[2], 200), width=3)
+            ring_draw.ellipse([avatar_x - 6, avatar_y - 6,
+                               avatar_x + avatar_size + 6, avatar_y + avatar_size + 6],
+                              outline=(accent_rgb[0], accent_rgb[1], accent_rgb[2], 210), width=3)
             _flatten(ring_layer)
             card.paste(avatar, (avatar_x, avatar_y), mask)
             draw = ImageDraw.Draw(card)
+            name_y = avatar_y + avatar_size + 44
         except Exception as e_avatar:
             print(f"[ID Card] Could not render avatar for {reg_no}: {e_avatar}")
             has_photo = False
 
-    if has_photo:
-        name_y, details_y, spacing = 342, 392, 32
-        qr_size, qr_top, footer_y = 200, 592, height - 42
-    else:
-        name_y, details_y, spacing = 212, 292, 35
-        qr_size, qr_top, footer_y = 250, 548, height - 42
+    if not has_photo:
+        name_y = pill_bot + 62
 
-    # 7. Attendee name & details
-    draw.text((width // 2, name_y), _fit_text(name, font_large, width - 120),
+    # 7. Attendee name, underlined by a short accent rule
+    draw.text((width // 2, name_y), _fit_text(name, font_large, width - 110),
               fill=text_primary, font=font_large, anchor="mm")
+    rule_layer, rule_draw = _new_layer()
+    rule_draw.rectangle([width // 2 - 38, name_y + 32, width // 2 + 38, name_y + 34],
+                        fill=(accent_rgb[0], accent_rgb[1], accent_rgb[2], 200))
+    _flatten(rule_layer)
 
     details = []
     if cfg.get("id_card_show_reg", True):
@@ -5014,39 +5152,84 @@ def _generate_id_card(name: str, reg_no: str, phone: str, email: str, uid: str, 
     if level and cfg.get("id_card_show_pass", True):
         details.append((cfg.get("id_card_label_pass", "PASS TYPE:"), str(level).upper()))
 
-    label_x, value_x = 78, 250
-    for label, val in details:
-        if val and val not in ("None", "nan", ""):
-            draw.text((label_x, details_y), str(label),
-                      fill=(accent_rgb[0], accent_rgb[1], accent_rgb[2], 220), font=font_label)
-            draw.text((value_x, details_y), _fit_text(val, font_sub, width - value_x - 70),
-                      fill=text_secondary, font=font_sub)
-            details_y += spacing
+    # Project-specific roster columns. Every event imports a different
+    # spreadsheet, so "id_card_extra_fields" names which of this event's own
+    # columns ("Department", "Blood Group", "Seat No", ...) appear on the badge.
+    # Accepts a list, or a comma-separated string from the settings form.
+    extra_fields = cfg.get("id_card_extra_fields") or []
+    if isinstance(extra_fields, str):
+        extra_fields = [c.strip() for c in extra_fields.split(",") if c.strip()]
+    for col in extra_fields:
+        val = card_ctx.get(_norm_placeholder(col))
+        if val:
+            details.append((f"{str(col).upper()}:", str(val)))
 
-    # Never let a long detail list collide with the QR panel.
-    qr_top = max(qr_top, details_y + 24)
-    qr_bottom_limit = footer_y - 30 if cfg.get("id_card_footer", "").strip() else height - 40
-    qr_size = max(150, min(qr_size, qr_bottom_limit - qr_top - 20))
+    details = [(lb, vl) for lb, vl in details if vl and vl not in ("None", "nan", "")]
 
-    # 8. Embed QR Code Image on an opaque white panel (scanner contrast)
+    # Fit the detail block and the QR panel into the space that is actually
+    # left, instead of assuming a fixed number of rows.
+    footer_text = _resolve_card_text(cfg.get("id_card_footer", "").strip(), card_ctx)
+    strip_h = 54 if footer_text else 26
+    avail_bottom = height - strip_h - 18
+
+    details_top = name_y + 58
+    row_h = 34 if len(details) <= 6 else 30
+    details_h = len(details) * row_h
+    _free_h = avail_bottom - (details_top + details_h) - 76
+    qr_size = max(150, min(268 if not has_photo else 224, _free_h))
+
+    label_x, value_x = 74, 250
+    dy = details_top
+    for idx, (label, val) in enumerate(details):
+        draw.text((label_x, dy), str(label),
+                  fill=(accent_rgb[0], accent_rgb[1], accent_rgb[2], 225), font=font_label)
+        draw.text((value_x, dy), _fit_text(val, font_sub, width - value_x - 66),
+                  fill=text_secondary, font=font_sub)
+        if idx < len(details) - 1:
+            sep_layer, sep_draw = _new_layer()
+            sep_draw.line([(label_x, dy + row_h - 9), (width - 74, dy + row_h - 9)],
+                          fill=(text_primary[0], text_primary[1], text_primary[2], 22), width=1)
+            _flatten(sep_layer)
+        dy += row_h
+
+    # 8. QR panel — opaque white for scanner contrast, with a caption.
+    # Centred in whatever vertical space is left rather than butted against the
+    # detail rows, so a badge with few fields does not leave a dead gap above
+    # the footer strip.
+    _pad, _cap_h = 13, 30
+    _region_top, _region_bot = dy + 18, avail_bottom
+    _block_h = qr_size + _pad * 2 + _cap_h
+    qr_top = _region_top + max(0, (_region_bot - _region_top - _block_h) // 2) + _pad
     if qr_path and os.path.exists(qr_path):
         try:
             qr_img = Image.open(qr_path).convert("RGBA")
             qr_img = qr_img.resize((qr_size, qr_size), Image.Resampling.LANCZOS)
-            pad = 12
+            pad = _pad
             qr_x = width // 2 - qr_size // 2
             draw.rounded_rectangle(
                 [qr_x - pad, qr_top - pad, qr_x + qr_size + pad, qr_top + qr_size + pad],
                 radius=16, fill=(255, 255, 255, 255))
             card.paste(qr_img, (qr_x, qr_top), qr_img)
             draw = ImageDraw.Draw(card)
+            cap_y = qr_top + qr_size + pad + 15
+            if cap_y < avail_bottom:
+                draw.text((width // 2, cap_y), "SCAN AT ENTRY",
+                          fill=(text_secondary[0], text_secondary[1], text_secondary[2], 150),
+                          font=font_label, anchor="mm")
         except Exception as e_qr:
             print(f"[ID Card] Could not embed QR for {reg_no}: {e_qr}")
 
-    footer_text = cfg.get("id_card_footer", "").strip()
+    # Footer strip, mirroring the header band
+    strip_layer, strip_draw = _new_layer()
+    strip_draw.rectangle([0, height - strip_h, width, height],
+                         fill=(accent_rgb[0], accent_rgb[1], accent_rgb[2], 26))
+    strip_draw.rectangle([0, height - strip_h, width, height - strip_h + 2],
+                         fill=(accent_rgb[0], accent_rgb[1], accent_rgb[2], 170))
+    _flatten(strip_layer)
     if footer_text:
-        draw.text((width // 2, footer_y), _fit_text(str(footer_text).upper(), font_sub, width - 100),
-                  fill=(text_secondary[0], text_secondary[1], text_secondary[2], 200),
+        draw.text((width // 2, height - strip_h // 2),
+                  _fit_text(str(footer_text).upper(), font_sub, width - 90),
+                  fill=(text_secondary[0], text_secondary[1], text_secondary[2], 215),
                   font=font_sub, anchor="mm")
 
     # 9. Save Files
@@ -5349,23 +5532,40 @@ def _perform_bulk_import(rows, mode, auto_resolve) -> tuple[dict, int]:
             new_regs = []
             
             for row in rows:
+                # Rows from /preview_import carry the original columns under
+                # "raw"; merge them so custom fields survive the round-trip.
+                if isinstance(row, dict) and isinstance(row.get("raw"), dict):
+                    merged = dict(row["raw"])
+                    for _std in ("name", "email", "reg_no", "phone"):
+                        if row.get(_std) and _std not in merged:
+                            merged[_std] = row[_std]
+                    row = merged
+
                 name = ""
                 email = ""
                 reg_no = ""
                 phone = ""
                 
+                # Field detection, most specific first. Phone must be tested
+                # before the registration branch: a header of "Phone Number"
+                # contains "number", so the reg test used to claim it and the
+                # phone was dropped for any roster using that common header.
                 for k, v in row.items():
-                    k_low = k.lower().strip()
+                    k_low = str(k).lower().strip()
                     val_str = _clean_val(v)
-                    if "name" in k_low:
-                        name = val_str
-                    elif "email" in k_low:
-                        email = val_str
-                    elif "reg" in k_low or "number" in k_low or "id" in k_low:
-                        if "phone" not in k_low and "whatsapp" not in k_low:
+                    is_phone = any(t in k_low for t in ("phone", "mobile", "whatsapp", "contact"))
+                    if is_phone:
+                        if not phone:
+                            phone = _normalize_phone(v)
+                    elif "email" in k_low or k_low == "mail":
+                        if not email:
+                            email = val_str
+                    elif "name" in k_low:
+                        if not name:
+                            name = val_str
+                    elif "reg" in k_low or "number" in k_low or k_low in ("id", "uid", "ticket no", "ticket number"):
+                        if not reg_no:
                             reg_no = val_str
-                    elif "phone" in k_low or "mobile" in k_low or "whatsapp" in k_low or "contact" in k_low:
-                        phone = _normalize_phone(v)
                 
                 # Validation check
                 if not name or not reg_no:
@@ -5420,13 +5620,29 @@ def _perform_bulk_import(rows, mode, auto_resolve) -> tuple[dict, int]:
                 if "sms sent status" in hdrs:
                     ws.cell(row=new_r, column=hdrs["sms sent status"], value="Not Sent")
                 
-                # Fill custom columns dynamically
+                # Fill custom columns dynamically, creating any that the sheet
+                # does not have yet.
+                #
+                # This previously wrote a column only when it already existed in
+                # the sheet, and nothing ever created one -- so on a fresh event
+                # every project-specific field in the uploaded roster
+                # ("Department", "Blood Group", "Seat No", ...) was silently
+                # dropped. Each event imports a different spreadsheet, so unknown
+                # headers are now added as real columns and preserved.
                 for key, val in row.items():
-                    key_clean = key.lower().strip()
-                    excluded = ["name", "email", "reg_no", "phone", "unique id", "qr", "barcode",
-                                SCAN_COL_NAME.lower(), "email sent status", "whatsapp sent status", "sms sent status"]
-                    if key_clean in hdrs and key_clean not in excluded:
-                        ws.cell(row=new_r, column=hdrs[key_clean], value=str(val).strip())
+                    key_clean = str(key).lower().strip()
+                    if not key_clean or key_clean in _RESERVED_COLUMN_KEYS:
+                        continue
+                    # Skip the aliases already consumed into standard columns.
+                    if any(a in key_clean for a in ("name", "email", "phone", "mobile", "whatsapp", "contact")):
+                        continue
+                    if key_clean in ("reg no", "reg number", "registration number", "reg_no", "registration_number"):
+                        continue
+                    if key_clean not in hdrs:
+                        new_col = ws.max_column + 1
+                        ws.cell(row=1, column=new_col, value=str(key).strip())
+                        hdrs[key_clean] = new_col
+                    ws.cell(row=new_r, column=hdrs[key_clean], value=_clean_val(val))
                 
                 _embed_qr_image(ws, new_r, qr_path, hdrs["qr code image"])
                 _embed_barcode_image(ws, new_r, barcode_path, hdrs["barcode image"])
@@ -5455,7 +5671,8 @@ def _perform_bulk_import(rows, mode, auto_resolve) -> tuple[dict, int]:
                             uid=uid,
                             qr_path=qr_path,
                             event_name=cfg.get("event_name_template", "the Event"),
-                            level=level
+                            level=level,
+                            row_data=row
                         )
                     except Exception as e:
                         print(f"Error generating ID card on import: {e}")
@@ -5521,12 +5738,13 @@ def import_csv():
             
         rows_to_process = []
         for row in reader:
-            rows_to_process.append({
-                "name": row.get("Name", "").strip(),
-                "email": row.get("Email Address", "").strip(),
-                "reg_no": row.get("Registration Number", "").strip(),
-                "phone": row.get("Phone Number", "").strip() if "Phone Number" in row else ""
-            })
+            # Carry every original column through. Flattening to four keys here
+            # meant project-specific fields ("Department", "Blood Group", ...)
+            # were discarded before the importer ever saw them, so they could
+            # never reach the roster or an ID badge.
+            full_row = {str(k).strip(): ("" if v is None else str(v).strip())
+                        for k, v in row.items() if k and str(k).strip()}
+            rows_to_process.append(full_row)
             
     except Exception as e:
         return jsonify(message=f"Error parsing CSV: {str(e)}"), 400
@@ -5550,9 +5768,9 @@ def preview_import():
         if filename.endswith(".csv"):
             content = file.stream.read()
             stream = io.StringIO(content.decode("utf-8", errors="replace"), newline=None)
-            df = pd.read_csv(stream)
+            df = _read_roster_csv(stream)
         else:
-            df = pd.read_excel(file, engine="openpyxl")
+            df = _read_roster_df(file)
             
         df.columns = df.columns.astype(str).str.strip()
     except Exception as e:
@@ -5578,7 +5796,7 @@ def preview_import():
     db_emails = set()
     try:
         with lock:
-            df_db = pd.read_excel(get_excel_file(), engine="openpyxl")
+            df_db = _read_roster_df(get_excel_file())
         df_db.columns = df_db.columns.str.strip()
         db_col_map = {c.lower(): c for c in df_db.columns}
         
@@ -5649,6 +5867,10 @@ def preview_import():
             if email_low:
                 file_emails.add(email_low)
             
+        # "raw" carries the untouched source columns so /confirm_import can
+        # write the project-specific fields, not just the four standard ones.
+        raw_row = {str(k).strip(): _clean_val(v)
+                   for k, v in row.items() if k and str(k).strip()}
         preview_records.append({
             "name": name,
             "email": email,
@@ -5656,7 +5878,8 @@ def preview_import():
             "phone": phone,
             "status": status,
             "issue": issue,
-            "errors": val_errors
+            "errors": val_errors,
+            "raw": raw_row
         })
         
     return jsonify(preview_records)
@@ -5761,7 +5984,7 @@ def _run_whatsapp_campaign(wa_provider, target_column, target_subgroup, host_url
     attendees = []
     try:
         with lock:
-            df_xl = pd.read_excel(excel_file, engine="openpyxl")
+            df_xl = _read_roster_df(excel_file)
             
         df_xl.columns = df_xl.columns.str.strip()
         col_map = {c.lower(): c for c in df_xl.columns}
@@ -5940,7 +6163,7 @@ def _run_email_campaign(sender_email, app_password, subject, event_name, target_
     attendees = []
     try:
         with lock:
-            df_xl = pd.read_excel(excel_file, engine="openpyxl")
+            df_xl = _read_roster_df(excel_file)
             
         df_xl.columns = df_xl.columns.str.strip()
         col_map = {c.lower(): c for c in df_xl.columns}
@@ -6159,7 +6382,7 @@ def _run_sms_campaign(sms_provider, event_name, host_url, target_column=None, ta
     attendees = []
     try:
         with lock:
-            df_xl = pd.read_excel(excel_file, engine="openpyxl")
+            df_xl = _read_roster_df(excel_file)
 
         df_xl.columns = df_xl.columns.str.strip()
         col_map = {c.lower(): c for c in df_xl.columns}
@@ -6372,7 +6595,7 @@ def download_id_card(reg_no):
         
     try:
         with lock:
-            df_xl = pd.read_excel(excel_file, engine="openpyxl")
+            df_xl = _read_roster_df(excel_file)
         df_xl.columns = df_xl.columns.astype(str).str.strip()
         col_map = {c.lower(): c for c in df_xl.columns}
         
@@ -6453,7 +6676,8 @@ def download_id_card(reg_no):
             event_name=cfg.get("event_name_template", "the Event"),
             level=level,
             cfg=resolved_cfg,
-            profile_photo=profile_photo
+            profile_photo=profile_photo,
+            row_data=row_dict
         )
         
         return send_file(pdf_path, as_attachment=True, download_name=f"id_card_{reg_no}.pdf")
@@ -6574,6 +6798,11 @@ def preview_id_card():
             "id_card_label_phone": label_phone,
             "id_card_label_uid": label_uid,
             "id_card_label_pass": label_pass,
+            # Comma-separated roster columns, so the designer preview can show
+            # this event's own fields without saving the config first.
+            "id_card_extra_fields": [c.strip() for c in
+                                     request.args.get("extra_fields", "").split(",") if c.strip()]
+                                    or get_event_config().get("id_card_extra_fields", []),
             "id_card_photo_option": photo_option,
             "enable_id_card_generation": True
         }
@@ -6597,13 +6826,16 @@ def preview_id_card():
     level_val = "VIP"
     qr_path_val = dummy_qr
     profile_photo_val = ""
+    # Only populated when a real reg_no resolves to a roster row; the sample
+    # preview has no attendee behind it.
+    row_dict = {}
     
     if reg_no_param:
         excel_file = get_excel_file()
         if os.path.exists(excel_file):
             try:
                 with lock:
-                    df_xl = pd.read_excel(excel_file, engine="openpyxl")
+                    df_xl = _read_roster_df(excel_file)
                 df_xl.columns = df_xl.columns.astype(str).str.strip()
                 col_map = {c.lower(): c for c in df_xl.columns}
                 reg_col = col_map.get("registration number")
@@ -6629,10 +6861,19 @@ def preview_id_card():
                             if col_val and col_val.lower() not in ["nan", "none", ""]:
                                 level_val = col_val
                         else:
-                            for k, v in row_dict.items():
-                                if "level" in k.lower() or "subgroup" in k.lower():
-                                    level_val = v
-                                    break
+                            # _get_attendee_level knows the full alias set
+                            # (ticket class, category, role, type, ...); the
+                            # local loop here only matched "level"/"subgroup",
+                            # so a "Ticket Class" column was ignored and the
+                            # badge kept showing the sample pass type.
+                            resolved_lvl = _get_attendee_level(row_dict)
+                            if resolved_lvl:
+                                level_val = resolved_lvl
+                            else:
+                                for k, v in row_dict.items():
+                                    if "level" in k.lower() or "subgroup" in k.lower():
+                                        level_val = v
+                                        break
                                     
                         # Resolve custom photo link
                         for k, v in row_dict.items():
@@ -6657,7 +6898,8 @@ def preview_id_card():
             event_name=mock_cfg.get("event_name_template", "SAMPLE CONFERENCE"),
             level=level_val,
             cfg=mock_cfg,
-            profile_photo=profile_photo_val
+            profile_photo=profile_photo_val,
+            row_data=row_dict
         )
         return send_file(png_path, mimetype="image/png")
     except Exception as e:
@@ -6955,7 +7197,8 @@ def _resolve_email_attachments(reg_no, row_dict, cfg):
                 qr_path=qr_file,
                 event_name=event_name,
                 level=level,
-                cfg=resolved_cfg
+                cfg=resolved_cfg,
+                row_data=row_dict
             )
         except Exception as e:
             print(f"Error generating ID card for attachment: {str(e)}")
@@ -6985,7 +7228,7 @@ def _send_single_email_helper(reg_no, cfg, subject_override=None, body_override=
         return False, "Gmail SMTP credentials are not configured in settings."
     try:
         with lock:
-            df_xl = pd.read_excel(excel_file, engine="openpyxl")
+            df_xl = _read_roster_df(excel_file)
         df_xl.columns = df_xl.columns.astype(str).str.strip()
         col_map = {c.lower(): c for c in df_xl.columns}
         reg_col = col_map.get("registration number")
@@ -7090,7 +7333,7 @@ def _send_single_whatsapp_helper(reg_no, cfg, host_url, body_override=None) -> t
         return False, "Registration spreadsheet missing.", {}
     try:
         with lock:
-            df_xl = pd.read_excel(excel_file, engine="openpyxl")
+            df_xl = _read_roster_df(excel_file)
         df_xl.columns = df_xl.columns.astype(str).str.strip()
         col_map = {c.lower(): c for c in df_xl.columns}
         reg_col = col_map.get("registration number")
@@ -7153,7 +7396,7 @@ def _send_single_sms_helper(reg_no, cfg, host_url, body_override=None) -> tuple[
     event_name = cfg.get("event_name_template", "the Event")
     try:
         with lock:
-            df_xl = pd.read_excel(excel_file, engine="openpyxl")
+            df_xl = _read_roster_df(excel_file)
         df_xl.columns = df_xl.columns.astype(str).str.strip()
         col_map = {c.lower(): c for c in df_xl.columns}
         reg_col = col_map.get("registration number")

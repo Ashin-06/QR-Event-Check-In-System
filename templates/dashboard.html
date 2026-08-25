@@ -1327,6 +1327,81 @@
     #csv-table tbody tr:hover {
       background: rgba(255, 255, 255, 0.03) !important;
     }
+
+    /* ── Info badges & floating tooltip engine ──────────────────────────────
+       The markup carries 29 `.info-btn` badges with data-tooltip text, but the
+       stylesheet and the JS to surface them were missing entirely, so they
+       rendered as bare "i" characters that did nothing.
+
+       Tooltips are positioned by a single element appended to <body> rather
+       than by CSS on the badge: several badges sit inside panels with
+       `overflow: hidden`, which clips an absolutely-positioned child. */
+    .info-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 15px;
+      height: 15px;
+      margin-left: 5px;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid rgba(255, 255, 255, 0.22);
+      color: var(--muted, #8b98a9);
+      font-family: Georgia, 'Times New Roman', serif;
+      font-size: 10px;
+      font-style: italic;
+      font-weight: 700;
+      line-height: 1;
+      text-transform: none;
+      letter-spacing: 0;
+      cursor: help;
+      user-select: none;
+      vertical-align: middle;
+      flex-shrink: 0;
+      transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+    }
+
+    .info-btn:hover,
+    .info-btn:focus-visible,
+    .info-btn.tip-open {
+      background: var(--accent, #00f5a0);
+      border-color: var(--accent, #00f5a0);
+      color: #05121b;
+      outline: none;
+    }
+
+    #global-floating-tooltip {
+      position: fixed;
+      z-index: 99999;
+      max-width: 300px;
+      padding: 9px 12px;
+      border-radius: 8px;
+      background: #0d1622;
+      border: 1px solid var(--accent, #00f5a0);
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.55);
+      color: #e8eef6;
+      font-family: var(--font, 'Plus Jakarta Sans', 'Inter', system-ui, sans-serif);
+      font-size: 0.72rem;
+      font-style: normal;
+      font-weight: 500;
+      line-height: 1.5;
+      letter-spacing: 0.01em;
+      text-align: left;
+      text-transform: none;
+      pointer-events: none;
+      opacity: 0;
+      transform: translateY(4px);
+      transition: opacity 0.14s ease, transform 0.14s ease;
+    }
+
+    #global-floating-tooltip.visible {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      #global-floating-tooltip { transition: none; }
+    }
     </style>
 </head>
 <body>
@@ -1861,6 +1936,15 @@
 <div style="display: flex; align-items: center; gap: 8px; border: 1px solid rgba(255,255,255,0.03); padding: 6px; border-radius: 6px; background: rgba(0,0,0,0.1);">
 <input checked="" id="cfg-id-card-show-pass" style="width: 14px; height: 14px; cursor: pointer; margin: 0;" type="checkbox"/>
 <input class="form-input" id="cfg-id-card-label-pass" style="padding: 4px 6px; font-size: 0.72rem;" type="text" value="PASS TYPE:"/>
+</div>
+</div>
+<div style="margin-top: 12px; border-top: 1px solid var(--border); padding-top: 10px;">
+<label class="form-label">Roster Fields On Badge <span class="info-btn info-down" data-tooltip="Tick any column from THIS event's imported spreadsheet to print it on the ID card. Every project has different columns, so this list is built from your own roster.">i</span></label>
+<div id="cfg-id-card-extra-fields" style="display: flex; flex-wrap: wrap; gap: 6px; max-height: 130px; overflow-y: auto; padding: 8px; border: 1px solid var(--border); border-radius: 6px; background: rgba(0,0,0,0.15);">
+<span style="font-size: 0.68rem; color: var(--muted);">Loading roster columns…</span>
+</div>
+<div style="font-size: 0.63rem; color: var(--muted); margin-top: 5px; line-height: 1.5;">
+You can also use any column as a placeholder in the header or footer, e.g. <code style="color: var(--accent2);">{Department}</code>.
 </div>
 </div>
 </div>
@@ -2553,7 +2637,7 @@ Distribution of check-in arrivals over time.
 </div>
 </div>
 <!-- Action Buttons -->
-<div style="display: flex; gap: 12px; margin-top: 8px;">
+<div style="display: flex; gap: 12px; margin-top: 8px; flex: 1 0 100%; width: 100%;">
 <button class="ops-btn" id="btn-save-designer-config" onclick="window.saveDesignerConfig()" style="flex: 2; margin: 0; background: var(--accent); border-color: var(--accent); color: #fff;" type="button">Save Visual Configuration</button>
 <button class="ops-btn" id="btn-reset-designer-config" onclick="window.resetDesignerConfig()" style="flex: 1; margin: 0; background: transparent; border-color: var(--border); color: var(--muted);" type="button">Reset</button>
 </div>
@@ -2676,6 +2760,191 @@ Distribution of check-in arrivals over time.
     if (typed) return typed;
     return el.dataset.hasStored ? window.SECRET_MASK : '';
   };
+
+
+
+  // ── Roster-field picker for ID badges ──────────────────────────────────────
+  // Lists the active event's own spreadsheet columns so an operator can tick
+  // which project-specific fields ("Department", "Blood Group", ...) print on
+  // the badge. Nothing here is hardcoded: every event has different columns.
+  window.getSelectedExtraFields = function() {
+    const box = document.getElementById('cfg-id-card-extra-fields');
+    if (!box) return [];
+    return [...box.querySelectorAll('input[type=checkbox]:checked')].map(c => c.value);
+  };
+
+  window.renderExtraFieldPicker = function(selected) {
+    const box = document.getElementById('cfg-id-card-extra-fields');
+    if (!box) return;
+    const chosen = new Set((selected || []).map(v => String(v).toLowerCase()));
+    fetch('/active_event_columns')
+      .then(r => r.json())
+      .then(data => {
+        // Columns the system manages itself are not useful on a badge.
+        const skip = /^(scan timestamps|scan devices|scan count|email sent status|whatsapp sent status|sms sent status|qr code image|barcode image|scanned status)$/i;
+        const cols = (data.columns || []).filter(c => c && !skip.test(String(c).trim()));
+        if (!cols.length) {
+          box.innerHTML = '';
+          const hint = document.createElement('span');
+          hint.style.cssText = 'font-size:0.68rem; color:var(--muted);';
+          hint.textContent = 'No extra columns in this event’s roster yet. Import a spreadsheet with your own columns to see them here.';
+          box.appendChild(hint);
+          return;
+        }
+        box.innerHTML = '';
+        cols.forEach(col => {
+          const id = 'xf-' + col.replace(/[^A-Za-z0-9]/g, '-').toLowerCase();
+          const label = document.createElement('label');
+          label.setAttribute('for', id);
+          label.style.cssText = 'display:flex; align-items:center; gap:5px; padding:4px 9px; ' +
+            'border:1px solid var(--border); border-radius:20px; background:rgba(255,255,255,0.03); ' +
+            'font-size:0.68rem; cursor:pointer; user-select:none;';
+          const cb = document.createElement('input');
+          cb.type = 'checkbox';
+          cb.id = id;
+          cb.value = col;
+          cb.checked = chosen.has(String(col).toLowerCase());
+          cb.style.cssText = 'width:13px; height:13px; margin:0; cursor:pointer;';
+          cb.addEventListener('change', () => {
+            if (typeof window.debouncePreview === 'function') window.debouncePreview();
+          });
+          label.appendChild(cb);
+          label.appendChild(document.createTextNode(col));
+          box.appendChild(label);
+        });
+      })
+      .catch(() => {
+        box.innerHTML = '';
+        const err = document.createElement('span');
+        err.style.cssText = 'font-size:0.68rem; color:var(--muted);';
+        err.textContent = 'Could not load roster columns.';
+        box.appendChild(err);
+      });
+  };
+
+  // ── Floating tooltip engine ────────────────────────────────────────────────
+  // Badges are matched by delegation so tooltips work on markup rendered later
+  // (registry rows, quarantine cards, designer fields). A single element lives
+  // on <body>, because badges inside `overflow: hidden` panels would clip an
+  // absolutely-positioned child.
+  (function initTooltipEngine() {
+    let tipEl = null;
+    let activeBadge = null;
+
+    function getTip() {
+      if (!tipEl) {
+        tipEl = document.createElement('div');
+        tipEl.id = 'global-floating-tooltip';
+        tipEl.setAttribute('role', 'tooltip');
+        document.body.appendChild(tipEl);
+      }
+      return tipEl;
+    }
+
+    function place(badge) {
+      const text = badge.getAttribute('data-tooltip');
+      if (!text) return;
+      const tip = getTip();
+      tip.textContent = text;              // textContent, never innerHTML
+      tip.classList.add('visible');
+
+      // Measure after the text is in, then clamp inside the viewport.
+      const b = badge.getBoundingClientRect();
+      const t = tip.getBoundingClientRect();
+      const gap = 8, margin = 8;
+
+      let top = b.bottom + gap;
+      // `info-down` badges are near the bottom of a panel; flip above if the
+      // tooltip would fall off-screen either way.
+      if (top + t.height > window.innerHeight - margin) {
+        const above = b.top - t.height - gap;
+        if (above >= margin) top = above;
+        else top = Math.max(margin, window.innerHeight - t.height - margin);
+      }
+
+      let left = b.left + b.width / 2 - t.width / 2;
+      left = Math.max(margin, Math.min(left, window.innerWidth - t.width - margin));
+
+      tip.style.top = Math.round(top) + 'px';
+      tip.style.left = Math.round(left) + 'px';
+    }
+
+    function show(badge) {
+      if (activeBadge === badge) return;
+      hide();
+      activeBadge = badge;
+      badge.classList.add('tip-open');
+      place(badge);
+    }
+
+    function hide() {
+      if (tipEl) tipEl.classList.remove('visible');
+      if (activeBadge) activeBadge.classList.remove('tip-open');
+      activeBadge = null;
+    }
+
+    function badgeFrom(target) {
+      return target && target.closest ? target.closest('.info-btn[data-tooltip]') : null;
+    }
+
+    document.addEventListener('mouseover', (e) => {
+      const badge = badgeFrom(e.target);
+      if (badge) show(badge);
+      else if (activeBadge && !badgeFrom(e.target)) hide();
+    });
+
+    document.addEventListener('mouseout', (e) => {
+      const badge = badgeFrom(e.target);
+      if (badge && badge === activeBadge) hide();
+    });
+
+    // Touch / click: tap to toggle, tap elsewhere to dismiss.
+    document.addEventListener('click', (e) => {
+      const badge = badgeFrom(e.target);
+      if (badge) {
+        e.preventDefault();
+        e.stopPropagation();
+        if (activeBadge === badge) hide(); else show(badge);
+      } else {
+        hide();
+      }
+    }, true);
+
+    // Keyboard access.
+    document.addEventListener('focusin', (e) => {
+      const badge = badgeFrom(e.target);
+      if (badge) show(badge);
+    });
+    document.addEventListener('focusout', (e) => {
+      if (badgeFrom(e.target)) hide();
+    });
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') hide();
+    });
+
+    window.addEventListener('scroll', hide, true);
+    window.addEventListener('resize', hide);
+
+    // Make every badge focusable and screen-reader friendly, including ones
+    // added to the DOM later.
+    function enhance(root) {
+      (root || document).querySelectorAll('.info-btn[data-tooltip]').forEach((b) => {
+        if (b.dataset.tipReady) return;
+        b.dataset.tipReady = '1';
+        b.setAttribute('tabindex', '0');
+        b.setAttribute('role', 'button');
+        b.setAttribute('aria-label', b.getAttribute('data-tooltip'));
+      });
+    }
+    enhance(document);
+    new MutationObserver((muts) => {
+      muts.forEach((m) => m.addedNodes.forEach((n) => {
+        if (n.nodeType === 1) enhance(n);
+      }));
+    }).observe(document.body, { childList: true, subtree: true });
+
+    window.refreshTooltips = enhance;
+  })();
 
   function escapeHtml(str) {
     if (!str) return '';
@@ -3102,6 +3371,10 @@ Distribution of check-in arrivals over time.
         if (document.getElementById('cfg-id-card-show-phone')) document.getElementById('cfg-id-card-show-phone').checked = cfg.id_card_show_phone !== false;
         if (document.getElementById('cfg-id-card-show-uid')) document.getElementById('cfg-id-card-show-uid').checked = cfg.id_card_show_uid !== false;
         if (document.getElementById('cfg-id-card-show-pass')) document.getElementById('cfg-id-card-show-pass').checked = cfg.id_card_show_pass !== false;
+        // Build the roster-field picker from THIS event's own columns. Each
+        // event imports a different spreadsheet, so the list is fetched rather
+        // than hardcoded.
+        window.renderExtraFieldPicker(cfg.id_card_extra_fields || []);
         if (document.getElementById('cfg-id-card-label-reg')) document.getElementById('cfg-id-card-label-reg').value = cfg.id_card_label_reg || 'REGISTRATION:';
         if (document.getElementById('cfg-id-card-label-email')) document.getElementById('cfg-id-card-label-email').value = cfg.id_card_label_email || 'EMAIL:';
         if (document.getElementById('cfg-id-card-label-phone')) document.getElementById('cfg-id-card-label-phone').value = cfg.id_card_label_phone || 'PHONE:';
@@ -3569,6 +3842,7 @@ Distribution of check-in arrivals over time.
       id_card_show_phone: document.getElementById('cfg-id-card-show-phone') ? document.getElementById('cfg-id-card-show-phone').checked : true,
       id_card_show_uid: document.getElementById('cfg-id-card-show-uid') ? document.getElementById('cfg-id-card-show-uid').checked : true,
       id_card_show_pass: document.getElementById('cfg-id-card-show-pass') ? document.getElementById('cfg-id-card-show-pass').checked : true,
+      id_card_extra_fields: window.getSelectedExtraFields(),
       id_card_label_reg: document.getElementById('cfg-id-card-label-reg') ? document.getElementById('cfg-id-card-label-reg').value.trim() : 'REGISTRATION:',
       id_card_label_email: document.getElementById('cfg-id-card-label-email') ? document.getElementById('cfg-id-card-label-email').value.trim() : 'EMAIL:',
       id_card_label_phone: document.getElementById('cfg-id-card-label-phone') ? document.getElementById('cfg-id-card-label-phone').value.trim() : 'PHONE:',
@@ -6068,7 +6342,10 @@ Distribution of check-in arrivals over time.
     if (spinner) spinner.style.display = 'block';
     if (previewImg) previewImg.style.display = 'none';
     
-    const query = `theme=${theme}&header=${header}&footer=${footer}&show_reg=${showReg}&show_email=${showEmail}&show_phone=${showPhone}&show_uid=${showUid}&show_pass=${showPass}&label_reg=${labelReg}&label_email=${labelEmail}&label_phone=${labelPhone}&label_uid=${labelUid}&label_pass=${labelPass}&t=${Date.now()}`;
+    // Ticked roster columns, so the preview reflects them before saving.
+    const extraFields = encodeURIComponent((window.getSelectedExtraFields ? window.getSelectedExtraFields() : []).join(','));
+
+    const query = `theme=${theme}&header=${header}&footer=${footer}&show_reg=${showReg}&show_email=${showEmail}&show_phone=${showPhone}&show_uid=${showUid}&show_pass=${showPass}&label_reg=${labelReg}&label_email=${labelEmail}&label_phone=${labelPhone}&label_uid=${labelUid}&label_pass=${labelPass}&extra_fields=${extraFields}&t=${Date.now()}`;
     
     if (previewImg) previewImg.src = `/preview_id_card?${query}`;
   };
