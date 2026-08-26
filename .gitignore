@@ -31,3 +31,6 @@ results.txt
 # Persisted Flask session signing key — never commit
 .secret_key
 .credentials_key
+
+# App-owned fallback for temporary workbook/image staging files.
+runtime/

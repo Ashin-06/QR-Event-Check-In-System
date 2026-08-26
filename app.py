@@ -360,6 +360,28 @@ EVENTS_DIR       = os.path.join(BASE_DIR, "events")
 os.makedirs(EVENTS_DIR, exist_ok=True)
 SCAN_COL_NAME    = "Scanned Status"
 
+
+def _ensure_runtime_temp_dir() -> str:
+    """Use an app-owned temporary folder when the host TEMP path is unavailable."""
+    import tempfile
+
+    configured = os.environ.get("TEMP") or os.environ.get("TMP")
+    if configured and os.path.isdir(configured) and os.access(configured, os.W_OK):
+        return configured
+
+    runtime_temp = os.path.join(BASE_DIR, "runtime", "tmp")
+    os.makedirs(runtime_temp, exist_ok=True)
+    # tempfile caches its decision, so set both the environment and its module
+    # value before any workbook/image helper asks it for a staging file.
+    os.environ["TEMP"] = runtime_temp
+    os.environ["TMP"] = runtime_temp
+    tempfile.tempdir = runtime_temp
+    print(f"[*] System temp folder unavailable; using {runtime_temp}")
+    return runtime_temp
+
+
+_ensure_runtime_temp_dir()
+
 def _load_persisted_active_event() -> str:
     """
     Restore the event that was active before the last shutdown.
@@ -4488,7 +4510,6 @@ def _generate_id_card(name: str, reg_no: str, phone: str, email: str, uid: str, 
                     resolved_html = resolved_html.replace("{LOGO_URL}", "")
                 
                 # Strip body layout styles (min-height, height, display, justify-content, align-items, margin)
-                import re
                 cleaned_css = css_content or ""
                 def _strip_body(m):
                     body_rules = m.group(1)
