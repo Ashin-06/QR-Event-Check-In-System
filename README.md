@@ -87,7 +87,20 @@ pip install -r requirements.txt
 ```
 
 ### 2. Launching the System
-Double-click **`run_system.bat`** (or run `python app.py` from the terminal).
+Double-click **`START_SYSTEM.bat`** in the outer folder, or **`run_system.bat`** inside this app folder.
+Both work from any current directory, including paths containing spaces. The launcher prefers the app's
+`.venv` interpreter, then the Windows Python launcher, then `python` on PATH. Python 3.10+ is required.
+It checks required files/packages, starts the server in the same window, and opens the dashboard once it is ready.
+Keep that window open while using the app; press Ctrl+C to stop it. Missing packages are reported with an install
+command; nothing is installed automatically. A busy port produces an explanation without stopping other programs.
+
+To check installation without starting the app or changing event data, run `run_system.bat --check`.
+Use `run_system.bat --no-browser` if you prefer to open the dashboard yourself.
+The `PORT` environment variable is respected by the server, browser URL and standalone tunnel launcher.
+The optional `start_public_tunnel.bat` checks for SSH and asks before publishing the app. Enable manager and
+scanner authentication first; this launcher retains SSH host-key verification.
+
+Launcher regression checks: `python tests/test_launcher.py`.
 * **Local Access**: Open `http://localhost:5001/dashboard` to access the Control Center.
 * **LAN Access**: Operators on the same Wi-Fi network can connect to the host's IP (e.g. `http://192.168.1.15:5001`).
 
