@@ -2353,31 +2353,32 @@ Distribution of check-in arrivals over time.
 </div>
 </div></div><div class="main-tab-content" id="main-tab-designer-content"><div class="panel" style="margin-top: 0; padding: 24px;">
 <div class="panel-title" style="margin-bottom: 20px; border-bottom: 1px solid var(--border); padding-bottom: 12px; display: flex; justify-content: space-between; align-items: center;">
-<span>🎨 ID Card Designer &amp; Group Communications</span>
-<span style="font-size: 0.72rem; color: var(--muted); font-weight: normal;">Live customize layout, select themes, add custom fields, and configure templates per group.</span>
+<span>🎨 Design your ID cards</span>
+<span style="font-size: 0.82rem; color: var(--muted); font-weight: normal;">Choose a style, connect your roster fields, preview, then save.</span>
 </div>
 <div style="display: flex; gap: 24px; flex-wrap: wrap;">
-<!-- LEFT: Visual Live Card Preview Area -->
-<div style="flex: 1; min-width: 360px; max-width: 440px; display: flex; flex-direction: column; align-items: center; gap: 16px;">
-<!-- Toggle Preview mode: HTML vs PIL Render -->
-<div class="ops-tabs" style="width: 100%; display: flex; justify-content: center; margin-bottom: 8px; background: rgba(0,0,0,0.2); padding: 4px; border-radius: 8px;">
-<button class="ops-tab-btn active" id="btn-preview-mode-html" onclick="window.setCardPreviewMode('html')" style="flex: 1; text-align: center;">Web Preview</button>
-<button class="ops-tab-btn" id="btn-preview-mode-render" onclick="window.setCardPreviewMode('render')" style="flex: 1; text-align: center;">Final PIL Render</button>
+<div style="flex: 1; min-width: min(100%, 300px); max-width: 440px; display: flex; flex-direction: column; align-items: center; gap: 16px;">
+<div class="ops-tabs" style="width: 100%; display: flex; padding: 4px; border-radius: 8px;">
+<button class="ops-tab-btn" id="btn-preview-mode-html" onclick="window.setCardPreviewMode('html')" style="flex: 1;">Layout editor</button>
+<button class="ops-tab-btn active" id="btn-preview-mode-render" onclick="window.setCardPreviewMode('render')" style="flex: 1;">Print preview</button>
 </div>
-<!-- HTML Preview Container -->
-<div id="id-card-preview-container" style="position: relative; width: 340px; height: 540px; border-radius: 20px; box-shadow: 0 15px 40px rgba(0,0,0,0.5); overflow: hidden; background: linear-gradient(135deg, #0b0f19 0%, #1a2333 100%); border: 1px solid rgba(255,255,255,0.08); box-sizing: border-box;">
-<!-- Dynamic HTML Content rendered here -->
+<div id="id-card-preview-container" style="display: none; position: relative; width: 340px; max-width: 100%; height: 540px; border-radius: 16px; overflow: hidden; background: #0b0f19;"></div>
+<div id="id-card-render-container" style="width: 340px; max-width: 100%; aspect-ratio: 2 / 3; border-radius: 16px; box-shadow: 0 15px 40px rgba(0,0,0,0.35); overflow: hidden; border: 1px solid rgba(255,255,255,0.08); background: #0b0f19;">
+<img alt="ID card print preview" id="id-card-render-img" hidden style="width: 100%; height: 100%; object-fit: contain;"/>
 </div>
-<!-- Rendered Image Preview (Hidden by default) -->
-<div id="id-card-render-container" style="display: none; width: 340px; height: 540px; border-radius: 20px; box-shadow: 0 15px 40px rgba(0,0,0,0.5); overflow: hidden; border: 1px solid rgba(255,255,255,0.08); background: #000;">
-<img alt="Rendered Preview" id="id-card-render-img" src="" style="width: 100%; height: 100%; object-fit: contain;"/>
+<label for="designer-preview-attendee" style="align-self: stretch; font-size: 0.85rem;">Preview with</label>
+<select class="form-input" id="designer-preview-attendee" onchange="window.setCardPreviewMode('render')" style="width: 100%;"><option value="">Sample attendee (not valid for entry)</option></select>
+<div id="designer-preview-status" role="status" aria-live="polite" style="font-size: 0.85rem; text-align: center; min-height: 2.8em;">Preparing your card…</div>
+<button type="button" class="download-btn" onclick="window.setCardPreviewMode('render')">Refresh preview</button>
+<p style="font-size: 0.82rem; color: var(--muted); text-align: center;">Edit fields with the controls. Print preview uses the same renderer as downloads. The layout editor is an approximate guide for HTML templates.</p>
 </div>
-<div style="font-size: 0.7rem; color: var(--muted); text-align: center; line-height: 1.4;">
-        💡 Click on any text inside the card to edit directly. Drag or use the sliders to adjust position, size, and style.
-      </div>
+<div style="flex: 2; min-width: min(100%, 320px); display: flex; flex-direction: column; gap: 20px;">
+<div style="padding: 16px; border: 1px solid var(--border); border-radius: 12px;">
+<label for="designer-starter-style" class="form-label">Start with a ready-made design</label>
+<select id="designer-starter-style" class="form-input" onchange="window.useStarterDesign(this.value)">
+<option value="">Choose a new design…</option><option value="navy">Midnight / mint</option><option value="ivory">Ivory / blue</option><option value="forest">Forest / gold</option>
+</select><p style="font-size: 0.82rem; color: var(--muted); margin-bottom: 0;">Includes name, registration, pass type, photo or initials, and QR. You can undo this change.</p>
 </div>
-<!-- RIGHT: Controls & Template Settings -->
-<div style="flex: 2; min-width: 400px; display: flex; flex-direction: column; gap: 20px;">
 <!-- Group Configuration Target Selection -->
 <div style="padding: 14px; background: rgba(0,245,160,0.04); border: 1px solid rgba(0,245,160,0.15); border-radius: 12px;">
 <label class="form-label" style="color: var(--accent); font-size: 0.74rem;">Select Configuration Target:</label>
@@ -2470,14 +2471,14 @@ Distribution of check-in arrivals over time.
         <span>Horizontal (X)</span>
         <span id="designer-val-x">300</span>
       </div>
-      <input class="form-range" id="designer-slider-x" max="600" min="0" oninput="window.updateSelectedFieldFromControls()" step="5" style="width: 100%; margin-top: 4px;" type="range"/>
+      <input class="form-range" id="designer-slider-x" max="576" min="24" step="1" style="width: 100%; margin-top: 4px;" type="range"/>
     </div>
     <div>
       <div style="display: flex; justify-content: space-between; font-size: 0.62rem; color: var(--muted); font-weight: 700; text-transform: uppercase;">
         <span>Vertical (Y)</span>
         <span id="designer-val-y">210</span>
       </div>
-      <input class="form-range" id="designer-slider-y" max="900" min="0" oninput="window.updateSelectedFieldFromControls()" step="5" style="width: 100%; margin-top: 4px;" type="range"/>
+      <input class="form-range" id="designer-slider-y" max="876" min="24" step="1" style="width: 100%; margin-top: 4px;" type="range"/>
     </div>
   </div>
 
@@ -2649,6 +2650,7 @@ Distribution of check-in arrivals over time.
 <script src="/static/js/jquery.dataTables.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 <script type="module">
+  import { createCardPreview } from '/static/js/card-preview.js';
   // Suppress Datatable alert boxes
   if (window.jQuery && window.jQuery.fn && window.jQuery.fn.dataTable) {
     window.jQuery.fn.dataTable.ext.errMode = 'throw';
@@ -6829,13 +6831,39 @@ Distribution of check-in arrivals over time.
 
   // ── ID CARD VISUAL DESIGNER LOGIC ──
   window.cardTemplatesCache = [];
-  window.designerConfig = {
-    mode: "custom",
-    bg_start: [11, 15, 25],
-    bg_end: [26, 35, 51],
-    accent_color: "#00f5a0",
-    border_color: "rgba(255,255,255,0.08)",
-    fields: []
+  window.createDefaultDesignerConfig = function(style = 'navy') {
+    const palette = {
+      navy: { start: [11,22,39], end: [27,44,64], accent: '#68e3c0', text: [246,249,252], muted: [187,205,222] },
+      ivory: { start: [252,250,244], end: [236,240,245], accent: '#2457a7', text: [28,40,59], muted: [72,86,105] },
+      forest: { start: [12,39,34], end: [25,60,49], accent: '#e4c27a', text: [255,250,235], muted: [206,216,198] }
+    }[style] || { start: [11,22,39], end: [27,44,64], accent: '#68e3c0', text: [246,249,252], muted: [187,205,222] };
+    const text = (label, y, size, color, binding = '', bold = false) => ({
+      type: 'text', text: label, bind_column: binding, x: 300, y,
+      font_size: size, color, align: 'center', bold, font_name: 'Arial'
+    });
+    return {
+      mode: 'custom', bg_start: palette.start, bg_end: palette.end,
+      accent_color: palette.accent, border_color: palette.accent,
+      photo: { enabled: true, x: 225, y: 145, size: 150 },
+      qr: { x: 180, y: 560, size: 240 },
+      fields: [
+        text('{Event}', 82, 22, hexToRgb(palette.accent), '', true),
+        text('{Name}', 352, 42, palette.text, 'Name', true),
+        text('{Registration Number}', 412, 21, palette.muted, 'Registration Number'),
+        text('{Pass Type}', 472, 22, hexToRgb(palette.accent), 'Pass Type', true),
+        text('SCAN AT CHECK-IN', 839, 15, palette.muted)
+      ]
+    };
+  };
+  window.designerConfig = window.createDefaultDesignerConfig();
+  window.useStarterDesign = function(style) {
+    if (!style) return;
+    window.designerHistory.saveState();
+    window.designerConfig = window.createDefaultDesignerConfig(style);
+    window.selectedFieldId = null;
+    window.designerHistory.syncUI();
+    window.setCardPreviewMode('render');
+    showDashboardToast('Design ready', 'Personalize the fields, check the preview, then save.', 'ok');
   };
   // Undo/Redo History Manager
   window.designerHistory = {
@@ -6931,6 +6959,17 @@ Distribution of check-in arrivals over time.
 
   // Initialize and load templates presets
   window.initCardDesigner = function() {
+    if (window.cardDesignerInitialized) return;
+    window.cardDesignerInitialized = true;
+    window.populateDesignerBindColumns();
+    const attendeeSelect = document.getElementById('designer-preview-attendee');
+    fetch('/registry').then(res => {
+      if (!res.ok) throw new Error('Roster unavailable');
+      return res.json();
+    }).then(rows => {
+      if (!Array.isArray(rows)) return;
+      rows.forEach(row => attendeeSelect.add(new Option(`${row.name} · ${row.reg_no}`, row.reg_no)));
+    }).catch(() => { /* A sample preview remains available without a roster. */ });
     // 1. Fetch presets list
     fetch('/list_id_templates')
       .then(res => res.json())
@@ -6955,15 +6994,29 @@ Distribution of check-in arrivals over time.
       .then(cfg => {
         window.eventConfig = cfg;
         const designerSettings = cfg.id_card_designer_settings;
-        if (designerSettings) {
-          window.designerConfig = designerSettings;
-          // Apply background colors to pickers
-          applyDesignerConfigToPickers();
-          // Load fields dropdown and render
-          renderDesignerPreview();
+        if (designerSettings && typeof designerSettings === 'object' &&
+            Object.keys(designerSettings).length > 0) {
+          const starter = window.createDefaultDesignerConfig();
+          // Older events may have a partial or an empty object saved. Merge
+          // it with the starter instead of replacing the entire designer with
+          // an unusable blank configuration.
+          window.designerConfig = { ...starter, ...designerSettings };
+          if (!Array.isArray(designerSettings.fields)) {
+            window.designerConfig.fields = starter.fields;
+          }
         }
+        // A new event has no saved designer config. It still needs a complete,
+        // editable starter card instead of a blank preview area.
+        applyDesignerConfigToPickers();
+        populateFieldsDropdown();
+        renderDesignerPreview();
       })
-      .catch(err => console.error("Error loading visual designer config:", err));
+      .catch(err => {
+        showDashboardToast('Saved design unavailable', 'Showing a starter design. Reload before saving over an existing design.', 'err');
+        applyDesignerConfigToPickers();
+        populateFieldsDropdown();
+        renderDesignerPreview();
+      });
 
     // 3. Bind UI event listeners
     setupDesignerListeners();
@@ -6993,6 +7046,8 @@ Distribution of check-in arrivals over time.
   }
 
   function setupDesignerListeners() {
+    if (window.cardDesignerListenersReady) return;
+    window.cardDesignerListenersReady = true;
     // Color inputs
     const inputs = ['designer-bg-start', 'designer-bg-end', 'designer-accent-color', 'designer-border-color'];
     inputs.forEach(id => {
@@ -7129,10 +7184,10 @@ Distribution of check-in arrivals over time.
       document.getElementById('designer-field-settings').style.display = 'block';
       
       // Populate positions
-      document.getElementById('designer-slider-x').value = f.x || 300;
-      document.getElementById('designer-slider-y').value = f.y || 210;
-      document.getElementById('designer-val-x').textContent = f.x || 300;
-      document.getElementById('designer-val-y').textContent = f.y || 210;
+      document.getElementById('designer-slider-x').value = f.x ?? 300;
+      document.getElementById('designer-slider-y').value = f.y ?? 210;
+      document.getElementById('designer-val-x').textContent = f.x ?? 300;
+      document.getElementById('designer-val-y').textContent = f.y ?? 210;
       
       // Populate column options if empty
       const textSelect = document.getElementById('designer-field-bind');
@@ -7276,33 +7331,24 @@ Distribution of check-in arrivals over time.
     }
   };
 
-  window.populateDesignerBindColumns = function() {
-    const textSelect = document.getElementById('designer-field-bind');
-    const imgSelect = document.getElementById('designer-field-img-bind');
-    if (!textSelect || !imgSelect) return;
-    
-    textSelect.innerHTML = '<option value="">-- No Binding (Static Text) --</option>';
-    imgSelect.innerHTML = '<option value="">-- No Binding (Static Image) --</option>';
-    
-    let headers = ['Name', 'Email Address', 'Registration Number', 'Phone Number', 'Unique ID', 'Pass Type'];
-    if (window.allAttendeesCache && window.allAttendeesCache.length > 0) {
-      const record = window.allAttendeesCache[0];
-      headers = Object.keys(record).filter(k => !['reg_index', 'status', 'email_sent', 'wa_sent', 'sms_sent', 'scan_timestamps', 'scan_devices', 'qr', 'barcode', 'qr_image', 'barcode_image'].includes(k));
+  window.populateDesignerBindColumns = async function() {
+    const selects = ['designer-field-bind', 'designer-field-img-bind'].map(id => document.getElementById(id));
+    if (selects.some(s => !s)) return;
+    try {
+      const res = await fetch('/active_event_columns');
+      if (!res.ok) throw new Error('Could not load roster columns.');
+      const data = await res.json();
+      const headers = [...new Set(['Name', 'Email Address', 'Registration Number', 'Phone Number', 'Unique ID', 'Pass Type', 'Event', ...(data.columns || [])])];
+      selects.forEach((select, index) => {
+        const selected = window.designerConfig.fields?.[window.selectedFieldId]?.bind_column || select.value;
+        const available = selected && !headers.includes(selected) ? [...headers, selected] : headers;
+        select.replaceChildren(new Option(index ? 'Use an uploaded image' : 'Use my own text', ''));
+        available.forEach(header => select.add(new Option(header, header)));
+        select.value = selected;
+      });
+    } catch (error) {
+      showDashboardToast('Roster fields unavailable', error.message, 'err');
     }
-    
-    headers.forEach(h => {
-      const label = h.charAt(0).toUpperCase() + h.slice(1).replace(/_/g, ' ');
-      
-      const optText = document.createElement('option');
-      optText.value = h;
-      optText.textContent = label;
-      textSelect.appendChild(optText);
-      
-      const optImg = document.createElement('option');
-      optImg.value = h;
-      optImg.textContent = label;
-      imgSelect.appendChild(optImg);
-    });
   };
 
   window.addDesignerField = function(fieldType = "text") {
@@ -7693,7 +7739,7 @@ Distribution of check-in arrivals over time.
   };
 
   // Preview Mode: HTML Web Preview vs Final PIL Render
-  window.cardPreviewMode = 'html';
+  window.cardPreviewMode = 'render';
   window.setCardPreviewMode = function(mode) {
     window.cardPreviewMode = mode;
     const htmlBtn = document.getElementById('btn-preview-mode-html');
@@ -7716,27 +7762,19 @@ Distribution of check-in arrivals over time.
     }
   };
 
-  window.reloadRenderPreview = function() {
-    const renderImg = document.getElementById('id-card-render-img');
-    if (!renderImg) return;
-    
-    renderImg.style.opacity = '0.5';
-    fetch('/preview_id_card', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(window.designerConfig)
+  const cardPreview = createCardPreview({
+    image: document.getElementById('id-card-render-img'),
+    status: document.getElementById('designer-preview-status'),
+    getRequest: () => ({
+      url: '/preview_id_card?' + new URLSearchParams({
+        reg_no: document.getElementById('designer-preview-attendee').value,
+        photo_option: document.getElementById('cfg-id-card-photo-option')?.value || 'image_needed'
+      }),
+      body: window.designerConfig
     })
-    .then(res => res.blob())
-    .then(blob => {
-      const url = URL.createObjectURL(blob);
-      renderImg.src = url;
-      renderImg.style.opacity = '1';
-    })
-    .catch(err => {
-      console.error("Error loading final PIL render preview:", err);
-      renderImg.style.opacity = '1';
-    });
-  };
+  });
+  window.reloadRenderPreview = () => cardPreview.refresh();
+  window.addEventListener('pagehide', () => cardPreview.dispose());
 
   // Render Visual Designer Preview (using Isolated iframe to render TailwindCSS templates)
   function renderDesignerPreview() {
@@ -7751,6 +7789,7 @@ Distribution of check-in arrivals over time.
     container.innerHTML = '';
     
     const iframe = document.createElement('iframe');
+    iframe.title = 'Approximate card layout editor';
     iframe.style.width = '100%';
     iframe.style.height = '100%';
     iframe.style.border = 'none';
@@ -7786,7 +7825,7 @@ Distribution of check-in arrivals over time.
           <!-- Dummy Photo Placeholder -->
           <div class="relative mt-12 flex flex-col items-center">
             <div class="w-24 h-24 rounded-full border-4 border-white/20 overflow-hidden bg-black/10 flex items-center justify-center text-[10px] text-white/50">
-              <img class="w-full h-full object-cover rounded-full" src="https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=200" alt="Photo">
+              <span style="font: 700 32px/1 Inter, sans-serif; color: rgba(255,255,255,.78);">JD</span>
             </div>
           </div>
           
@@ -7810,7 +7849,9 @@ Distribution of check-in arrivals over time.
     // Resolve profile photo display option
     const photoOptionEl = document.getElementById('cfg-id-card-photo-option');
     const photoOption = photoOptionEl ? photoOptionEl.value : 'image_needed';
-    let resolvedPhotoUrl = "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=200";
+    // Keep the editor usable offline and avoid an unnecessary third-party
+    // image request. The real card uses the attendee's photo when available.
+    let resolvedPhotoUrl = getInitialsSvgUri("John Doe");
     if (photoOption === 'hide_photo') {
       resolvedPhotoUrl = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
     } else if (photoOption === 'always_initials') {
@@ -7904,7 +7945,7 @@ Distribution of check-in arrivals over time.
               
               let src = f.image_url || '/static/uploads/logo.png';
               if (f.bind_column && f.bind_column.toLowerCase().includes('photo')) {
-                src = "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=200";
+                src = getInitialsSvgUri("John Doe");
               }
               imgEl.src = src;
               
@@ -7932,7 +7973,24 @@ Distribution of check-in arrivals over time.
               if (imgEl) imgEl.remove();
               
               const fontSize = Math.round(f.font_size * (naturalW / 600));
-              fieldEl.textContent = f.text || '';
+              // The editor promises a "Bind Value to Column" control. Mirror
+              // the final renderer by showing that bound sample value here.
+              const sampleValues = {
+                'name': 'John Doe',
+                'registration number': 'DEMO12345',
+                'email address': 'johndoe@example.com',
+                'email': 'johndoe@example.com',
+                'phone number': '+91 98765 43210',
+                'phone': '+91 98765 43210',
+                'unique id': 'ABC123XY',
+                'pass type': 'VIP',
+                'event': 'SAMPLE EVENT'
+              };
+              const normKey = value => String(value || '').trim().toLowerCase().replace(/[\s_]+/g, ' ');
+              let previewText = f.bind_column ? sampleValues[normKey(f.bind_column)] : '';
+              previewText = previewText || f.text || '';
+              previewText = previewText.replace(/\{([^{}]+)\}/g, (_, key) => sampleValues[normKey(key)] || '');
+              fieldEl.textContent = previewText;
               fieldEl.style.position = 'absolute';
               fieldEl.style.fontSize = `${fontSize}px`;
               fieldEl.style.color = rgbToCss(f.color);
@@ -8284,15 +8342,12 @@ Distribution of check-in arrivals over time.
         
         // Merge defaults if empty config loaded
         if (Object.keys(designerSettings).length === 0) {
-          designerSettings = {
-            mode: "custom",
-            bg_start: [11, 15, 25],
-            bg_end: [26, 35, 51],
-            accent_color: "#00f5a0",
-            border_color: "rgba(255,255,255,0.08)",
-            fields: []
-          };
+          designerSettings = cfg.id_card_designer_settings && Object.keys(cfg.id_card_designer_settings).length
+            ? structuredClone(cfg.id_card_designer_settings) : window.createDefaultDesignerConfig();
         }
+        window.designerHistory.undoStack = [];
+        window.designerHistory.redoStack = [];
+        window.designerHistory.updateButtons();
         
         window.designerConfig = designerSettings;
         applyDesignerConfigToPickers();
@@ -8318,7 +8373,10 @@ Distribution of check-in arrivals over time.
     
     // Get full config
     fetch('/get_config')
-      .then(res => res.json())
+      .then(res => {
+        if (!res.ok) throw new Error('Could not load the existing settings. Sign in or reload and try again.');
+        return res.json();
+      })
       .then(cfg => {
         if (type === 'global') {
           cfg.id_card_designer_settings = window.designerConfig;
@@ -8338,7 +8396,11 @@ Distribution of check-in arrivals over time.
           body: JSON.stringify(cfg)
         });
       })
-      .then(r => r.json())
+      .then(async response => {
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.message || 'Could not save this design.');
+        return data;
+      })
       .then(data => {
         showDashboardToast('Success', 'Visual ID Designer configuration saved successfully.', 'ok');
       })
@@ -8354,14 +8416,7 @@ Distribution of check-in arrivals over time.
   window.resetDesignerConfig = function() {
     if (confirm("Are you sure you want to reset the visual designer configuration for this target?")) {
       window.designerHistory.saveState();
-      window.designerConfig = {
-        mode: "custom",
-        bg_start: [11, 15, 25],
-        bg_end: [26, 35, 51],
-        accent_color: "#00f5a0",
-        border_color: "rgba(255,255,255,0.08)",
-        fields: []
-      };
+      window.designerConfig = window.createDefaultDesignerConfig();
       applyDesignerConfigToPickers();
       populateFieldsDropdown();
       window.selectedFieldId = null;
@@ -8370,11 +8425,8 @@ Distribution of check-in arrivals over time.
     }
   };
 
-  // Initial call inside onload or module loading
-  window.initCardDesigner();
-  // Initial call inside onload or module loading
-  window.initCardDesigner();
-  // Initial call inside onload or module loading
+  window.renderDesignerPreview = renderDesignerPreview;
+  // Initialize once at the end of this module, after every handler is defined.
   
   // ── CONTENTEDITABLE INTERACTIVE TEXT EDITING ──
   const previewContainer = document.getElementById('id-card-preview-container');

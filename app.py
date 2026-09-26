@@ -47,6 +47,8 @@ import queue
 import io
 import random
 import string
+from card_design import field_text, validate_design, resolve_design
+from roster_schema import match_columns, is_identity_column, validate_headers
 
 import pandas as pd
 import qrcode
@@ -1039,12 +1041,12 @@ def _read_roster_df(source, engine: str = "openpyxl"):
     A roster is a text record, so every cell is read as a string and callers
     normalise from there.
     """
-    return pd.read_excel(source, engine=engine, dtype=str)
+    return pd.read_excel(source, engine=engine, dtype=str, keep_default_na=False)
 
 
 def _read_roster_csv(source):
     """CSV counterpart of _read_roster_df -- same reasoning."""
-    return pd.read_csv(source, dtype=str)
+    return pd.read_csv(source, dtype=str, keep_default_na=False)
 
 
 def _clean_val(val, default="") -> str:
@@ -1290,6 +1292,9 @@ def _emit_managers(event: str, data=None) -> None:
 @socketio.on("connect")
 def _on_connect():
     global _connected_clients
+    # The HTTP passcode setting also applies to the websocket handshake.
+    if get_event_config().get("require_scanner_auth", False) and not _socket_is_manager():
+        return False
     with _clients_lock:
         _connected_clients += 1
         count = _connected_clients
@@ -2959,8 +2964,8 @@ def active_event_columns():
         system_cols = [
             "name", "email address", "registration number", "phone number",
             "unique id", "qr", "barcode", SCAN_COL_NAME.lower(),
-            "email sent status", "whatsapp sent status",
-            "qr code image", "barcode image"
+            "email sent status", "whatsapp sent status", "sms sent status",
+            "scan timestamps", "scan devices", "scan count", "qr code image", "barcode image"
         ]
         
         custom_cols = [col for col in df_xl.columns if col.lower() not in system_cols]
@@ -3408,6 +3413,19 @@ def get_config():
 @app.route("/save_config", methods=["POST"])
 def save_config():
     data = request.json or {}
+    if not isinstance(data, dict):
+        return jsonify(message="Configuration must be an object."), 400
+    try:
+        if data.get("id_card_designer_settings"):
+            validate_design(data["id_card_designer_settings"])
+        for key in ("subgroup_designer_settings", "custom_group_designer_settings"):
+            if key in data:
+                if not isinstance(data[key], dict):
+                    raise ValueError("Group designs must be an object.")
+                for design in data[key].values():
+                    validate_design(design)
+    except ValueError as exc:
+        return jsonify(message=str(exc)), 400
     cfg = get_event_config()
     for k, v in data.items():
         # The browser never receives these, so it must never be able to
@@ -4094,7 +4112,12 @@ def _resolve_card_text(text: str, ctx: dict, keep_unknown: bool = False) -> str:
     return _PLACEHOLDER_RE.sub(_sub, str(text))
 
 
-def _generate_id_card(name: str, reg_no: str, phone: str, email: str, uid: str, qr_path: str, event_name: str, level: str = "", cfg: dict = None, profile_photo: str = "", theme: str = "", row_data: dict = None) -> tuple[str, str]:
+def _resolve_designer_field_text(field: dict, ctx: dict) -> str:
+    """Resolve a designer field from its roster binding or its text template."""
+    return field_text(field or {}, ctx or {})
+
+
+def _generate_id_card(name: str, reg_no: str, phone: str, email: str, uid: str, qr_path: str, event_name: str, level: str = "", cfg: dict = None, profile_photo: str = "", theme: str = "", row_data: dict = None, output_dir: str = None) -> tuple[str, str]:
     """
     Generates a beautifully styled vertical ID card (600x900 pixels) with a dark gradient,
     abstract design accents, event info, attendee details, and the embedded QR code.
@@ -4431,10 +4454,15 @@ def _generate_id_card(name: str, reg_no: str, phone: str, email: str, uid: str, 
     
     
     # ── Custom Designer Layout Drawing ──────────────────────────────────────
-    designer_settings = cfg.get("id_card_designer_settings") if cfg else None
+    if cfg is None:
+        cfg = get_event_config()
+    designer_settings = cfg.get("id_card_designer_settings")
+    if not cfg.get("_preview_design"):
+        designer_settings = resolve_design(cfg, {**(row_data or {}), "Registration Number": reg_no}, _load_groups())
     
     # Check if the custom designer layout is active and valid
     if designer_settings and designer_settings.get("mode") in ("custom", "custom_html"):
+        validate_design(designer_settings)
         if designer_settings.get("mode") == "custom_html":
             try:
                 html_content = designer_settings.get("html", "")
@@ -4453,7 +4481,9 @@ def _generate_id_card(name: str, reg_no: str, phone: str, email: str, uid: str, 
                 # Any roster column works as {Column Name}; the asset
                 # placeholders below are substituted afterwards, so they are
                 # preserved here rather than blanked.
-                resolved_html = _resolve_card_text(resolved_html, card_ctx, keep_unknown=True)
+                import html
+                escaped_ctx = {key: html.escape(str(value), quote=True) for key, value in card_ctx.items()}
+                resolved_html = _resolve_card_text(resolved_html, escaped_ctx, keep_unknown=True)
                 
                 # Resolve QR code base64
                 qr_base64 = ""
@@ -4522,7 +4552,18 @@ def _generate_id_card(name: str, reg_no: str, phone: str, email: str, uid: str, 
                 cleaned_css = re.sub(r'body\s*{(.*?)}', _strip_body, cleaned_css, flags=re.DOTALL | re.I)
                 
                 import json
-                fields_json = json.dumps(designer_settings.get("fields", []))
+                # Resolve text bindings before the HTML renderer sees them.
+                # A field bound to "Department" must print the attendee's
+                # department, not its editor label or a literal placeholder.
+                render_fields = []
+                for source_field in designer_settings.get("fields", []):
+                    render_field = dict(source_field)
+                    if render_field.get("type", "text") != "image":
+                        render_field["text"] = _resolve_designer_field_text(
+                            render_field, card_ctx
+                        )
+                    render_fields.append(render_field)
+                fields_json = json.dumps(render_fields).replace("<", "\\u003c").replace(">", "\\u003e").replace("&", "\\u0026")
                 body_class = designer_settings.get("body_class", "")
                 tailwind_config = designer_settings.get("tailwind_config", "")
                 tailwind_script = f"<script>tailwind.config = {tailwind_config};</script>" if tailwind_config else ""
@@ -4631,7 +4672,7 @@ def _generate_id_card(name: str, reg_no: str, phone: str, email: str, uid: str, 
                 </html>
                 """
                 
-                id_dir = os.path.join(get_qr_dir(), "id_cards")
+                id_dir = output_dir or os.path.join(get_qr_dir(), "id_cards")
                 os.makedirs(id_dir, exist_ok=True)
                 safe_reg = _safe_asset_name(reg_no)
                 png_path = os.path.join(id_dir, f"id_{safe_reg}.png")
@@ -4661,221 +4702,46 @@ def _generate_id_card(name: str, reg_no: str, phone: str, email: str, uid: str, 
                     img.save(pdf_path, "PDF", resolution=100.0)
                     return pdf_path, png_path
             except Exception as html_err:
-                print(f"HTML to Image rendering failed, falling back to PIL: {html_err}")
+                raise ValueError("This HTML template could not be rendered. Check the template and browser installation, or choose a ready-made design.") from html_err
                 
-        # Draw background gradient from custom layout colors
-        bg_start = list(designer_settings.get("bg_start", [11, 15, 25]))
-        bg_end = list(designer_settings.get("bg_end", [26, 35, 51]))
-        
-        # Ensure we have RGB tuples
-        if len(bg_start) == 3: bg_start = (bg_start[0], bg_start[1], bg_start[2], 255)
-        elif len(bg_start) == 4: bg_start = tuple(bg_start)
-        if len(bg_end) == 3: bg_end = (bg_end[0], bg_end[1], bg_end[2], 255)
-        elif len(bg_end) == 4: bg_end = tuple(bg_end)
-        
-        for y_coord in range(height):
-            ratio = y_coord / height
-            r = int(bg_start[0] * (1 - ratio) + bg_end[0] * ratio)
-            g = int(bg_start[1] * (1 - ratio) + bg_end[1] * ratio)
-            b = int(bg_start[2] * (1 - ratio) + bg_end[2] * ratio)
-            draw.line([(0, y_coord), (width, y_coord)], fill=(r, g, b, 255))
-            
-        # Draw custom shapes
-        shapes = designer_settings.get("shapes", [])
-        for s in shapes:
-            stype = s.get("type")
-            color = tuple(s.get("color", [255, 255, 255, 20]))
-            box = s.get("box")
-            coords = s.get("coords")
-            
-            if stype == "arc" and box:
-                draw.arc(box, start=0, end=360, fill=color, width=s.get("width", 1))
-            elif stype == "circle" and box:
-                draw.ellipse(box, fill=color)
-            elif stype == "line" and coords:
-                line_coords = [(pt[0], pt[1]) for pt in coords]
-                draw.line(line_coords, fill=color, width=s.get("width", 1))
-            elif stype == "rectangle" and box:
-                draw.rectangle(box, fill=color)
-                
-        # Draw custom fields
-        fields = designer_settings.get("fields", [])
-        for f in fields:
-            field_type = f.get("type", "text")
-            
-            if field_type == "image":
-                # Draw custom image field
-                img_url = f.get("image_url", "")
-                bind_col = f.get("bind_column", "")
-                
-                # Check if we should resolve profile photo for this attendee
-                resolved_img_path = None
-                if bind_col and bind_col.lower() in ["profile photo", "photo", "image", "profile_photo"]:
-                    resolved_img_path = _resolve_profile_photo(reg_no, profile_photo)
-                
-                # Fallback to static URL
-                if not resolved_img_path or not os.path.exists(resolved_img_path):
-                    # Check if the URL points to a local static upload
-                    if img_url.startswith("/static/"):
-                        local_path = img_url.replace("/static/", "").replace("/", os.sep)
-                        resolved_img_path = os.path.join(BASE_DIR, "static", local_path)
-                    elif img_url.startswith("http://") or img_url.startswith("https://"):
-                        import requests
-                        import tempfile
-                        try:
-                            resp = requests.get(img_url, timeout=5)
-                            if resp.status_code == 200:
-                                temp_f = tempfile.NamedTemporaryFile(delete=False, suffix=".png")
-                                temp_f.write(resp.content)
-                                temp_f.close()
-                                resolved_img_path = temp_f.name
-                        except Exception as e_dl:
-                            print(f"Error downloading external asset: {e_dl}")
-                
-                if resolved_img_path and os.path.exists(resolved_img_path):
-                    try:
-                        overlay_img = Image.open(resolved_img_path).convert("RGBA")
-                        img_w = f.get("width", 100)
-                        img_h = f.get("height", 100)
-                        overlay_img = overlay_img.resize((img_w, img_h), Image.Resampling.LANCZOS)
-                        
-                        x = f.get("x", 300)
-                        y = f.get("y", 250)
-                        # Paste overlay image onto the card
-                        card.paste(overlay_img, (x, y), overlay_img)
-                    except Exception as e_img:
-                        print(f"Error drawing overlay image: {e_img}")
-            else:
-                # Draw text field
-                text_tpl = f.get("text", "")
-                x = f.get("x", 300)
-                y = f.get("y", 210)
-                font_size = f.get("font_size", 16)
-                color_val = f.get("color", [255, 255, 255])
-                align = f.get("align", "center")
-                
-                # Resolve text value
-                resolved_text = _resolve_card_text(text_tpl, card_ctx)
-                
-                # Tracking (letter spacing)
-                tracking = f.get("tracking", "normal").lower()
-                if tracking == "wide":
-                    resolved_text = " ".join(resolved_text)
-                elif tracking == "extra_wide":
-                    resolved_text = "  ".join(resolved_text)
-                    
-                # Text Transform
-                transform = f.get("transform", "none").lower()
-                if transform == "uppercase":
-                    resolved_text = resolved_text.upper()
-                elif transform == "lowercase":
-                    resolved_text = resolved_text.lower()
-                elif transform == "capitalize":
-                    resolved_text = resolved_text.title()
-                
-                # Resolve font file based on font family, bold, and italic choices
-                font_family = f.get("font_name", "Arial").lower().strip()
-                font_path = "arial.ttf"
-                is_bold = f.get("bold", False)
-                is_italic = f.get("italic", False)
-                
-                if "georgia" in font_family:
-                    if is_bold and is_italic: font_path = "georgiaz.ttf"
-                    elif is_bold: font_path = "georgiab.ttf"
-                    elif is_italic: font_path = "georgiai.ttf"
-                    else: font_path = "georgia.ttf"
-                elif "times" in font_family or "roman" in font_family:
-                    if is_bold and is_italic: font_path = "timesbi.ttf"
-                    elif is_bold: font_path = "timesbd.ttf"
-                    elif is_italic: font_path = "timesi.ttf"
-                    else: font_path = "times.ttf"
-                elif "courier" in font_family or "cour" in font_family:
-                    if is_bold and is_italic: font_path = "courbi.ttf"
-                    elif is_bold: font_path = "courbd.ttf"
-                    elif is_italic: font_path = "couri.ttf"
-                    else: font_path = "cour.ttf"
-                elif "segoe" in font_family:
-                    if is_bold and is_italic: font_path = "segoeuiz.ttf"
-                    elif is_bold: font_path = "segoeuib.ttf"
-                    elif is_italic: font_path = "segoeuii.ttf"
-                    else: font_path = "segoeui.ttf"
-                elif "consolas" in font_family:
-                    if is_bold and is_italic: font_path = "consolaz.ttf"
-                    elif is_bold: font_path = "consolab.ttf"
-                    elif is_italic: font_path = "consolai.ttf"
-                    else: font_path = "consola.ttf"
-                else: # Arial / Outfit / Inter default to Arial
-                    if is_bold and is_italic: font_path = "arialbi.ttf"
-                    elif is_bold: font_path = "arialbd.ttf"
-                    elif is_italic: font_path = "ariali.ttf"
-                    else: font_path = "arial.ttf"
-                
-                resolved_font_path = font_path
-                sys_font = os.path.join("C:\\Windows\\Fonts", font_path)
-                if os.path.exists(sys_font):
-                    resolved_font_path = sys_font
-                
+        # One renderer serves both previews and downloads.
+        from card_design import render_custom
+        from PIL import Image
+        def load_image(field):
+            binding = str(field.get("bind_column", "")).strip()
+            url = card_ctx.get(_norm_placeholder(binding), "") if binding else field.get("image_url", "")
+            path = ""
+            if binding.lower() in ("profile photo", "photo", "image", "profile_photo"):
+                path = _resolve_profile_photo(reg_no, profile_photo)
+            elif isinstance(url, str) and url.startswith("/static/"):
+                static_root = os.path.realpath(os.path.join(BASE_DIR, "static"))
+                candidate = os.path.realpath(os.path.join(static_root, url[len("/static/"):]))
+                if os.path.commonpath([static_root, candidate]) == static_root:
+                    path = candidate
+            # Uploaded local assets are deliberately the only other image source.
+            # Remote URLs in arbitrary designer fields must not trigger server requests.
+            if path and os.path.isfile(path):
                 try:
-                    font = ImageFont.truetype(resolved_font_path, font_size)
-                except IOError:
-                    try:
-                        font = ImageFont.truetype("arial.ttf", font_size)
-                    except IOError:
-                        font = ImageFont.load_default()
-                    
-                anchor = "mm"
-                if align == "left":
-                    anchor = "lm"
-                elif align == "right":
-                    anchor = "rm"
-                    
-                color = tuple(color_val)
-                if len(color) == 3:
-                    color = (color[0], color[1], color[2], 255)
-                    
-                draw.text((x, y), resolved_text, fill=color, font=font, anchor=anchor)
-                
-                # Draw underline if enabled
-                if f.get("underline", False):
-                    try:
-                        bbox = draw.textbbox((x, y), resolved_text, font=font, anchor=anchor)
-                        line_y = bbox[3] + 2
-                        draw.line([(bbox[0], line_y), (bbox[2], line_y)], fill=color, width=max(1, font_size // 12))
-                    except Exception as e_und:
-                        print(f"Error drawing underline: {e_und}")
-            
-        # Draw QR Code
-        qr_cfg = designer_settings.get("qr", {"x": 180, "y": 550, "size": 240})
-        qr_x = qr_cfg.get("x", 180)
-        qr_y = qr_cfg.get("y", 550)
-        qr_size = qr_cfg.get("size", 240)
-        
-        if qr_path and os.path.exists(qr_path):
-            qr_img = Image.open(qr_path).convert("RGBA")
-            qr_img = qr_img.resize((qr_size, qr_size), Image.Resampling.LANCZOS)
-            
-            # Draw white background box behind QR code
-            draw.rounded_rectangle([qr_x - 10, qr_y - 10, qr_x + qr_size + 10, qr_y + qr_size + 10], radius=15, fill=(255, 255, 255, 255))
-            card.paste(qr_img, (qr_x, qr_y), qr_img)
-            
-        # Draw Outer Border
-        border_color = tuple(designer_settings.get("border_color", [255, 255, 255, 20]))
-        border_width = designer_settings.get("border_width", 2)
-        if len(border_color) == 3: border_color = (border_color[0], border_color[1], border_color[2], 255)
-        draw.rectangle([15, 15, width - 15, height - 15], outline=border_color, width=border_width)
-        
-        # Save custom layout card files
-        id_dir = os.path.join(get_qr_dir(), "id_cards")
+                    with Image.open(path) as img:
+                        return img.convert("RGBA")
+                except (OSError, ValueError):
+                    pass
+            return None
+
+        photo = None
+        photo_option = cfg.get("id_card_photo_option", "image_needed")
+        if photo_option == "hide_photo":
+            photo = False
+        elif photo_option != "always_initials" and designer_settings.get("photo", {}).get("enabled"):
+            photo = load_image({"bind_column": "Profile Photo"})
+        card_rgb = render_custom(designer_settings, card_ctx, qr_path, load_image, photo)
+        id_dir = output_dir or os.path.join(get_qr_dir(), "id_cards")
         os.makedirs(id_dir, exist_ok=True)
-        
         safe_reg = _safe_asset_name(reg_no)
         png_path = os.path.join(id_dir, f"id_{safe_reg}.png")
         pdf_path = os.path.join(id_dir, f"id_{safe_reg}.pdf")
-        
-        card_rgb = card.convert("RGB")
         card_rgb.save(png_path, "PNG")
-        card_rgb.save(pdf_path, "PDF", resolution=100.0)
-        
+        card_rgb.save(pdf_path, "PDF", resolution=300.0)
         return pdf_path, png_path
 
 # 2. Theme Selection Logic based on event_name or configuration override
@@ -5254,7 +5120,7 @@ def _generate_id_card(name: str, reg_no: str, phone: str, email: str, uid: str, 
                   font=font_sub, anchor="mm")
 
     # 9. Save Files
-    id_dir = os.path.join(get_qr_dir(), "id_cards")
+    id_dir = output_dir or os.path.join(get_qr_dir(), "id_cards")
     os.makedirs(id_dir, exist_ok=True)
 
     safe_reg = _safe_asset_name(reg_no)
@@ -5451,6 +5317,23 @@ def add_attendee():
 
 
 def _perform_bulk_import(rows, mode, auto_resolve) -> tuple[dict, int]:
+    if mode not in ("append", "reset"):
+        return {"message": "Choose append or reset import mode."}, 400
+    if not isinstance(rows, list) or not rows or any(not isinstance(row, dict) for row in rows):
+        return {"message": "Import rows must be a non-empty list of records."}, 400
+    # Unwrap preview records before building headers; never create raw/status/issue columns.
+    normalized_rows = []
+    canonical = {"name": "Name", "reg_no": "Registration Number", "email": "Email Address", "phone": "Phone Number"}
+    for item in rows:
+        if isinstance(item.get("raw"), dict):
+            row = dict(item["raw"])
+            for field, header in canonical.items():
+                if field in item:
+                    row[header] = item[field]
+        else:
+            row = dict(item)
+        normalized_rows.append(row)
+    rows = normalized_rows
     excel_file = get_excel_file()
     log_file = get_log_file()
     wb = None
@@ -5562,31 +5445,11 @@ def _perform_bulk_import(rows, mode, auto_resolve) -> tuple[dict, int]:
                             merged[_std] = row[_std]
                     row = merged
 
-                name = ""
-                email = ""
-                reg_no = ""
-                phone = ""
-                
-                # Field detection, most specific first. Phone must be tested
-                # before the registration branch: a header of "Phone Number"
-                # contains "number", so the reg test used to claim it and the
-                # phone was dropped for any roster using that common header.
-                for k, v in row.items():
-                    k_low = str(k).lower().strip()
-                    val_str = _clean_val(v)
-                    is_phone = any(t in k_low for t in ("phone", "mobile", "whatsapp", "contact"))
-                    if is_phone:
-                        if not phone:
-                            phone = _normalize_phone(v)
-                    elif "email" in k_low or k_low == "mail":
-                        if not email:
-                            email = val_str
-                    elif "name" in k_low:
-                        if not name:
-                            name = val_str
-                    elif "reg" in k_low or "number" in k_low or k_low in ("id", "uid", "ticket no", "ticket number"):
-                        if not reg_no:
-                            reg_no = val_str
+                mapping = match_columns(row.keys())
+                name = _clean_val(row.get(mapping.get("name")))
+                email = _clean_val(row.get(mapping.get("email")))
+                reg_no = _clean_val(row.get(mapping.get("reg_no")))
+                phone = _normalize_phone(row.get(mapping.get("phone"), ""))
                 
                 # Validation check
                 if not name or not reg_no:
@@ -5655,7 +5518,7 @@ def _perform_bulk_import(rows, mode, auto_resolve) -> tuple[dict, int]:
                     if not key_clean or key_clean in _RESERVED_COLUMN_KEYS:
                         continue
                     # Skip the aliases already consumed into standard columns.
-                    if any(a in key_clean for a in ("name", "email", "phone", "mobile", "whatsapp", "contact")):
+                    if is_identity_column(key):
                         continue
                     if key_clean in ("reg no", "reg number", "registration number", "reg_no", "registration_number"):
                         continue
@@ -5744,12 +5607,13 @@ def import_csv():
     file = request.files["file"]
     mode = request.form.get("mode", "append")
     
-    if not file.filename.endswith(".csv"):
+    if not file.filename.lower().endswith(".csv"):
         return jsonify(message="Uploaded file must be a CSV."), 400
         
     try:
-        stream = io.StringIO(file.stream.read().decode("utf-8", errors="replace"), newline=None)
+        stream = io.StringIO(file.stream.read().decode("utf-8-sig"), newline=None)
         reader = csv.DictReader(stream)
+        validate_headers(reader.fieldnames or [])
         reader.fieldnames = [f.strip() for f in reader.fieldnames]
         
         required_cols = {"Name", "Email Address", "Registration Number"}
@@ -5788,7 +5652,9 @@ def preview_import():
     try:
         if filename.endswith(".csv"):
             content = file.stream.read()
-            stream = io.StringIO(content.decode("utf-8", errors="replace"), newline=None)
+            stream = io.StringIO(content.decode("utf-8-sig"), newline=None)
+            validate_headers(next(csv.reader(stream), []))
+            stream.seek(0)
             df = _read_roster_csv(stream)
         else:
             df = _read_roster_df(file)
@@ -5797,18 +5663,7 @@ def preview_import():
     except Exception as e:
         return jsonify(message=f"Failed to read file: {str(e)}"), 400
         
-    mapping = {}
-    for col in df.columns:
-        c_low = col.lower().strip()
-        if "name" in c_low:
-            mapping["name"] = col
-        elif "email" in c_low:
-            mapping["email"] = col
-        elif "reg" in c_low or "number" in c_low or "id" in c_low:
-            if "phone" not in c_low and "whatsapp" not in c_low:
-                mapping["reg_no"] = col
-        elif "phone" in c_low or "whatsapp" in c_low or "contact" in c_low:
-            mapping["phone"] = col
+    mapping = match_columns(df.columns)
             
     if "name" not in mapping or "reg_no" not in mapping:
         return jsonify(message="File must contain columns for Name and Registration Number."), 400
@@ -6766,165 +6621,76 @@ def save_template_preset():
 
 @app.route("/preview_id_card", methods=["GET", "POST"])
 def preview_id_card():
-    theme = "cyber_neon"
-    header = ""
-    footer = ""
-    show_reg = True
-    show_email = True
-    show_phone = True
-    show_uid = True
-    show_pass = True
-    label_reg = "REGISTRATION:"
-    label_email = "EMAIL:"
-    label_phone = "PHONE:"
-    label_uid = "UNIQUE ID:"
-    label_pass = "PASS TYPE:"
-    
+    """Preview without overwriting an attendee's previously generated card."""
+    import tempfile
+    from PIL import Image
+    cfg = dict(get_event_config())
+    cfg["_preview_design"] = True
     if request.method == "POST":
-        # Parse visual designer layout settings from JSON payload
-        designer_payload = request.json or {}
-        cfg_global = get_event_config()
-        mock_cfg = {
-            "id_card_designer_settings": designer_payload,
-            "enable_id_card_generation": True,
-            "id_card_photo_option": cfg_global.get("id_card_photo_option", "image_needed")
-        }
+        design = request.get_json(silent=True)
+        try:
+            validate_design(design)
+        except ValueError as exc:
+            return jsonify(message=str(exc)), 400
+        cfg["id_card_designer_settings"] = design
     else:
-        # GET request: load from query params as before
-        theme = request.args.get("theme", "cyber_neon").strip()
-        header = request.args.get("header", "").strip()
-        footer = request.args.get("footer", "").strip()
-        show_reg = request.args.get("show_reg", "true").lower() == "true"
-        show_email = request.args.get("show_email", "true").lower() == "true"
-        show_phone = request.args.get("show_phone", "true").lower() == "true"
-        show_uid = request.args.get("show_uid", "true").lower() == "true"
-        show_pass = request.args.get("show_pass", "true").lower() == "true"
-        label_reg = request.args.get("label_reg", "REGISTRATION:").strip()
-        label_email = request.args.get("label_email", "EMAIL:").strip()
-        label_phone = request.args.get("label_phone", "PHONE:").strip()
-        label_uid = request.args.get("label_uid", "UNIQUE ID:").strip()
-        label_pass = request.args.get("label_pass", "PASS TYPE:").strip()
-        photo_option = request.args.get("photo_option", "image_needed").strip()
-        mock_cfg = {
-            "id_card_theme": theme,
-            "id_card_header": header,
-            "id_card_footer": footer,
-            "id_card_show_reg": show_reg,
-            "id_card_show_email": show_email,
-            "id_card_show_phone": show_phone,
-            "id_card_show_uid": show_uid,
-            "id_card_show_pass": show_pass,
-            "id_card_label_reg": label_reg,
-            "id_card_label_email": label_email,
-            "id_card_label_phone": label_phone,
-            "id_card_label_uid": label_uid,
-            "id_card_label_pass": label_pass,
-            # Comma-separated roster columns, so the designer preview can show
-            # this event's own fields without saving the config first.
-            "id_card_extra_fields": [c.strip() for c in
-                                     request.args.get("extra_fields", "").split(",") if c.strip()]
-                                    or get_event_config().get("id_card_extra_fields", []),
-            "id_card_photo_option": photo_option,
-            "enable_id_card_generation": True
-        }
-        
-    qr_dir = get_qr_dir()
-    os.makedirs(qr_dir, exist_ok=True)
-    dummy_qr = os.path.join(qr_dir, "dummy_preview.png")
-    if not os.path.exists(dummy_qr):
-        qr = qrcode.QRCode(version=1, box_size=10, border=4)
-        qr.add_data("John Doe | DEMO12345")
-        qr.make(fit=True)
-        img = qr.make_image(fill_color="black", back_color="white")
-        img.save(dummy_qr)
-        
-    reg_no_param = request.args.get("reg_no", "").strip()
-    name_val = "John Doe"
-    reg_no_val = "DEMO12345"
-    phone_val = "+91 98765 43210"
-    email_val = "johndoe@example.com"
-    uid_val = "ABC123XY"
-    level_val = "VIP"
-    qr_path_val = dummy_qr
-    profile_photo_val = ""
-    # Only populated when a real reg_no resolves to a roster row; the sample
-    # preview has no attendee behind it.
-    row_dict = {}
-    
-    if reg_no_param:
-        excel_file = get_excel_file()
-        if os.path.exists(excel_file):
-            try:
-                with lock:
-                    df_xl = _read_roster_df(excel_file)
-                df_xl.columns = df_xl.columns.astype(str).str.strip()
-                col_map = {c.lower(): c for c in df_xl.columns}
-                reg_col = col_map.get("registration number")
-                if reg_col:
-                    row_match = df_xl[df_xl[reg_col].astype(str).str.strip().str.lower() == reg_no_param.lower()]
-                    if not row_match.empty:
-                        row = row_match.iloc[0]
-                        row_dict = {c_orig: _clean_val(row.get(c_orig)) for c_low, c_orig in col_map.items()}
-                        name_val = _clean_val(row.get(col_map.get("name"))) or name_val
-                        reg_no_val = _clean_val(row.get(col_map.get("registration number"))) or reg_no_param
-                        phone_val = _clean_val(row.get(col_map.get("phone number"))) or phone_val
-                        email_val = _clean_val(row.get(col_map.get("email address"))) or email_val
-                        uid_val = _clean_val(row.get(col_map.get("unique id"))) or uid_val
-                        
-                        # Resolve level/subgroup
-                        group_col_val = mock_cfg.get("group_column", "")
-                        if group_col_val:
-                            col_val = None
-                            for k, v in row_dict.items():
-                                if str(k).strip().lower() == group_col_val.lower().strip():
-                                    col_val = str(v).strip()
-                                    break
-                            if col_val and col_val.lower() not in ["nan", "none", ""]:
-                                level_val = col_val
-                        else:
-                            # _get_attendee_level knows the full alias set
-                            # (ticket class, category, role, type, ...); the
-                            # local loop here only matched "level"/"subgroup",
-                            # so a "Ticket Class" column was ignored and the
-                            # badge kept showing the sample pass type.
-                            resolved_lvl = _get_attendee_level(row_dict)
-                            if resolved_lvl:
-                                level_val = resolved_lvl
-                            else:
-                                for k, v in row_dict.items():
-                                    if "level" in k.lower() or "subgroup" in k.lower():
-                                        level_val = v
-                                        break
-                                    
-                        # Resolve custom photo link
-                        for k, v in row_dict.items():
-                            if str(k).lower().strip() in ["profile photo", "photo", "image", "profile_photo"]:
-                                profile_photo_val = _clean_val(v)
-                                break
-                                
-                        qr_file_path = os.path.join(get_qr_dir(), f"{reg_no_val}.png")
-                        if os.path.exists(qr_file_path):
-                            qr_path_val = qr_file_path
-            except Exception as e_load:
-                print(f"[Preview Reg No] Error loading attendee details: {e_load}")
-
+        # The settings panel previews its unsaved standard theme, not a designer override.
+        cfg["id_card_designer_settings"] = {}
+        for arg, key in (("theme", "id_card_theme"), ("header", "id_card_header"),
+                         ("footer", "id_card_footer"), ("photo_option", "id_card_photo_option")):
+            if arg in request.args:
+                cfg[key] = request.args[arg].strip()
+        for suffix in ("reg", "email", "phone", "uid", "pass"):
+            if "show_" + suffix in request.args:
+                cfg["id_card_show_" + suffix] = request.args["show_" + suffix].lower() == "true"
+            if "label_" + suffix in request.args:
+                cfg["id_card_label_" + suffix] = request.args["label_" + suffix].strip()
+        if "extra_fields" in request.args:
+            cfg["id_card_extra_fields"] = [c.strip() for c in request.args["extra_fields"].split(",") if c.strip()]
+    if "photo_option" in request.args:
+        cfg["id_card_photo_option"] = request.args["photo_option"]
+    reg = request.args.get("reg_no", "").strip()
+    row = {}
+    values = dict(name="Alex Morgan", reg_no="DEMO12345", phone="+91 98765 43210",
+                  email="alex@example.com", uid="SAMPLE01", level="ATTENDEE", profile_photo="")
     try:
-        pdf_path, png_path = _generate_id_card(
-            name=name_val,
-            reg_no=reg_no_val,
-            phone=phone_val,
-            email=email_val,
-            uid=uid_val,
-            qr_path=qr_path_val,
-            event_name=mock_cfg.get("event_name_template", "SAMPLE CONFERENCE"),
-            level=level_val,
-            cfg=mock_cfg,
-            profile_photo=profile_photo_val,
-            row_data=row_dict
-        )
-        return send_file(png_path, mimetype="image/png")
-    except Exception as e:
-        return jsonify(message=f"Error generating preview: {str(e)}"), 500
+        if os.path.exists(get_excel_file()):
+            with lock:
+                roster = _read_roster_df(get_excel_file())
+            columns = match_columns(roster.columns)
+            if reg:
+                if "reg_no" not in columns:
+                    return jsonify(message="The roster has no registration-number column."), 400
+                matches = roster[roster[columns["reg_no"]].str.strip().str.casefold() == reg.casefold()]
+                if matches.empty:
+                    return jsonify(message="This attendee is no longer in the active event."), 404
+                row = {str(k): _clean_val(v) for k, v in matches.iloc[0].items()}
+                for key in ("name", "reg_no", "phone", "email"):
+                    values[key] = row.get(columns.get(key), "")
+                values["uid"] = row.get("Unique ID", "")
+                values["level"] = row.get(cfg.get("group_column"), "") or _get_attendee_level(row)
+                values["profile_photo"] = next((v for k, v in row.items() if _norm_placeholder(k) in ("profile photo", "photo", "image")), "")
+            else:
+                row = {str(c): "[" + str(c) + "]" for c in roster.columns if str(c).lower() not in _RESERVED_COLUMN_KEYS}
+        elif reg:
+            return jsonify(message="Import a roster before previewing an attendee."), 404
+        with tempfile.TemporaryDirectory(prefix="badge_preview_") as preview_dir:
+            qr_path = os.path.join(preview_dir, "preview_qr.png")
+            payload = _get_qr_payload(values["reg_no"], cfg) if reg else "SAMPLE BADGE - NOT VALID FOR ENTRY"
+            qrcode.make(payload, border=4).save(qr_path)
+            _, png_path = _generate_id_card(**values, qr_path=qr_path,
+                event_name=cfg.get("event_name_template") or "YOUR EVENT",
+                cfg=cfg, row_data=row, output_dir=preview_dir)
+            with open(png_path, "rb") as rendered:
+                result = io.BytesIO(rendered.read())
+        response = send_file(result, mimetype="image/png", max_age=0)
+        response.headers["Cache-Control"] = "no-store"
+        return response
+    except ValueError as exc:
+        return jsonify(message=str(exc)), 400
+    except Exception:
+        app.logger.exception("Badge preview failed")
+        return jsonify(message="Could not render this card. Check its fields and image assets, then retry."), 500
 
 
 # ── Subgroup Template Resolver Helper ──────────────────────────────────────────
@@ -7777,35 +7543,9 @@ load_active_event()
 if __name__ == "__main__":
     port  = int(os.environ.get("PORT", 5001))
     
-    # Gracefully free the port if occupied
-    import os, subprocess, signal
-    try:
-        if os.name == 'nt':
-            cmd = f"netstat -ano | findstr :{port}"
-            out = subprocess.check_output(cmd, shell=True).decode('utf-8', errors='ignore')
-            pids = set()
-            for line in out.strip().split('\n'):
-                line = line.strip()
-                if not line:
-                    continue
-                parts = line.split()
-                if len(parts) >= 5 and "LISTENING" in parts:
-                    pid = parts[-1]
-                    try:
-                        pids.add(int(pid))
-                    except ValueError:
-                        pass
-            my_pid = os.getpid()
-            for pid in pids:
-                if pid != my_pid:
-                    print(f"[*] Port {port} occupied by PID {pid}. Terminating it for a clean start...")
-                    subprocess.run(f"taskkill /F /PID {pid}", shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                    time.sleep(1.0)
-        else:
-            subprocess.run(f"fuser -k -n tcp {port}", shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            time.sleep(1.0)
-    except Exception as e:
-        print(f"[*] Note: Port check completed: {e}")
+    # Never terminate an unrelated process just because it owns this port.
+    # Let the server report a bind error; the operator can stop the old instance
+    # or choose another PORT explicitly.
 
     debug = os.environ.get("FLASK_DEBUG", "false").lower() == "true"
     lan_ip = get_lan_ip()

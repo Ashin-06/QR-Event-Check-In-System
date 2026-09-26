@@ -1,5 +1,38 @@
 # ⬢ Master System Architecture, Data Flow & Complete Changelog
 
+## Verification update — 26 September 2026
+
+This update improves the ID-card and roster workflows; it is not a certification that the entire application is production-ready. Earlier blanket claims of “all issues resolved” should be read with this qualification.
+
+### Changes in this pass
+
+- Added three editable starter badges: Midnight / mint, Ivory / blue, and Forest / gold.
+- Extracted custom badge drawing into `card_design.py`: bounded coordinates and font sizes, text fitting, proper translucent accents, CSS/RGB colour support, initials/photo support, nearest-neighbour QR scaling, and 300-DPI PDF output.
+- Print preview now uses the download renderer, supports a real roster entry, validates errors, cancels stale requests, and releases old image URLs. Preview files are temporary and cannot overwrite saved attendee cards.
+- Fixed repeated designer initialization, empty starter states, missing roster bindings, and misleading successful-save messages on HTTP failures. Slider positions now retain individual pixel values.
+- Shared exact column aliases in `roster_schema.py` prevent Company Name, Emergency Contact, and Seat Number from replacing attendee identity fields. Preview-confirm imports preserve original project fields without introducing internal metadata columns; UTF-8 BOMs, duplicate CSV headers, leading zeros, plus-prefixed phones, and literal NA values are handled.
+- Group card selection honours named-group overrides before subgroup overrides and the event default, including the current designer configuration stores.
+- Roster text substituted into HTML badges is escaped. Custom Pillow image fields accept local uploaded assets (not arbitrary remote fetches).
+- WebSocket handshakes now enforce the scanner-passcode setting when enabled.
+- Startup no longer terminates another process merely because it occupies the requested port.
+
+### Verification
+
+- `python tests/test_badge_workflows.py`: 17 passing isolated tests, including roster import/confirm/duplicate handling, field binding, colour validation, extreme text sizes, authenticated previews, saved PDF downloads, preview output isolation, group selection and decoding the rendered QR code.
+- `node tests/test_card_preview.mjs`: 4 passing checks covering dashboard script syntax, request debouncing, error display, stale-response cancellation and object-URL cleanup.
+- Browser checks on a disposable local event verified starter previews, actual roster field options, colour-style switching and the save action.
+- Tests execute the app against a temporary data directory; no real event roster, scan history, notifications or messaging credentials are used.
+- The QR decoding test needs OpenCV (`opencv-python-headless`) in addition to the application dependencies. JavaScript tests need Node.js.
+
+### Remaining release checks and compatibility notes
+
+- The HTML layout editor is an approximate editing view; use **Print preview** for the authoritative result. Custom HTML templates still need Chromium and may depend on external fonts/Tailwind. Only import trusted HTML; template sandboxing and offline bundling are not completed here.
+- Ready-made/custom Pillow cards render offline with available system fonts. Web-font names may use local equivalents. For custom image fields, upload images as assets; arbitrary external image URLs are no longer fetched by that renderer. The existing profile-photo workflow is separate.
+- Public scanner mode is still an explicit configuration option. With `require_scanner_auth=false`, scanner broadcasts are not private; enable scanner authentication before exposing an event that requires private live data.
+- Validate physical print size and scan reliability on your actual printer and gate devices. Load testing, live email/SMS/WhatsApp delivery, event-switch concurrency, remote-image-fetch hardening, deployment TLS and backup/restore procedures remain outside this verification pass.
+
+---
+
 ## 📌 Executive Summary
 
 The **QR Event Check-In System** is an enterprise-grade, real-time event operations platform engineered for high-throughput guest check-in, dynamic ID badge generation, multi-channel pass distribution (Email, WhatsApp, SMS), and live multi-device synchronization.
