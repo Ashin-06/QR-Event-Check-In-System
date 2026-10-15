@@ -102,10 +102,19 @@ def get_lan_ip() -> str:
 
 
 def is_localhost_request() -> bool:
+    from urllib.parse import urlsplit
+
     if request.headers.get("X-Forwarded-For"):
         return False
-    host = request.host.lower()
-    if not ("localhost" in host or "127.0.0.1" in host):
+    try:
+        authority = urlsplit("//" + request.host)
+        if authority.username is not None or authority.path or authority.query or authority.fragment:
+            return False
+        _ = authority.port
+        host = authority.hostname
+    except ValueError:
+        return False
+    if host not in {"localhost", "127.0.0.1", "::1"}:
         return False
     if request.remote_addr not in ["127.0.0.1", "::1"]:
         return False
