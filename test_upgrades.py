@@ -230,5 +230,21 @@ class TestUpgradedFeatures(unittest.TestCase):
         })
         self.assertIn(res.status_code, [200, 400])
 
+class TestPasscodeLockout(unittest.TestCase):
+    def test_wrong_tries_lock_out_even_the_right_code(self):
+        app.app.config["TESTING"] = True
+        app._passcode_fails.clear()
+        client = app.app.test_client()
+        for _ in range(app.MAX_PASSCODE_TRIES):
+            client.post("/dashboard_login", data={"passcode": "wrong"})
+        client.post("/dashboard_login", data={"passcode": app.dashboard_passcode})
+        with client.session_transaction() as s:
+            self.assertFalse(s.get("dashboard_authorized"))
+        app._passcode_fails.clear()
+        client.post("/dashboard_login", data={"passcode": app.dashboard_passcode})
+        with client.session_transaction() as s:
+            self.assertTrue(s.get("dashboard_authorized"))
+
+
 if __name__ == "__main__":
     unittest.main()

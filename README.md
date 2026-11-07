@@ -18,7 +18,7 @@ An enterprise-grade, secure, and highly scalable event check-in and attendee man
 ### 3. QR & Barcode Auto-Embedding
 * **Unique ID Generation**: Generates cryptographically collision-free 8-character Unique IDs for guests.
 * **Symbology Assets**: Auto-generates high-density QR codes and Code128 barcodes.
-* **Automated Excel Formatting**: Fits and embeds QR and Barcode images directly inside [registrations.xlsx](file:///c:/Users/ashin/Downloads/qr_checkin_system_upgraded/qr_checkin_system/events/Default%20Event/registrations.xlsx) cells with optimized cell heights to ensure professional printability.
+* **Automated Excel Formatting**: Fits and embeds QR and Barcode images directly inside [registrations.xlsx](registrations.xlsx) cells with optimized cell heights to ensure professional printability.
 
 ### 4. Bulk Invitation Campaigns
 * **Dynamic Placeholders**: Supports templated emails and Twilio WhatsApp notifications containing dynamic fields like `{Name}`, `{Registration Number}`, `{Event}`, and `{QR_URL}`.

@@ -27,6 +27,8 @@ from __future__ import annotations
 import eventlet
 eventlet.monkey_patch()
 
+import hmac
+import secrets
 import sys
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
@@ -131,7 +133,7 @@ def is_dashboard_authorized() -> bool:
         return True
         
     passcode_param = request.args.get("passcode")
-    if passcode_param == dashboard_passcode:
+    if passcode_param and _passcode_matches(passcode_param):
         session["dashboard_authorized"] = True
         return True
         
@@ -233,8 +235,26 @@ lock            = threading.RLock()
 highlight_lock  = threading.Lock()
 
 dashboard_sharing = "passcode"
-# Generate a random 4-digit passcode on server startup
-dashboard_passcode = "".join(random.choices(string.digits, k=4))
+# Generate a random 6-digit passcode on server startup
+dashboard_passcode = "".join(secrets.choice(string.digits) for _ in range(6))
+
+# Wrong passcodes lock that address out for a while, so the code can't be guessed
+MAX_PASSCODE_TRIES = 5
+PASSCODE_LOCK_SECONDS = 300
+_passcode_fails: dict[str, tuple[int, float]] = {}
+
+
+def _passcode_matches(code: str) -> bool:
+    ip = request.remote_addr or "unknown"
+    tries, locked_until = _passcode_fails.get(ip, (0, 0.0))
+    if time.time() < locked_until:
+        return False
+    if hmac.compare_digest(code.encode(), dashboard_passcode.encode()):
+        _passcode_fails.pop(ip, None)
+        return True
+    tries += 1
+    _passcode_fails[ip] = (0, time.time() + PASSCODE_LOCK_SECONDS) if tries >= MAX_PASSCODE_TRIES else (tries, 0.0)
+    return False
 
 # ── Rate limiting (simple in-memory) ─────────────────────────────────────────
 _rate_store: dict[str, float] = defaultdict(float)
@@ -325,7 +345,6 @@ def get_event_config() -> dict:
             
     # Auto-generate signing key if empty
     if not cfg.get("event_signing_key"):
-        import secrets
         cfg["event_signing_key"] = secrets.token_hex(16)
         save_event_config(cfg)
         
@@ -1007,7 +1026,7 @@ def dashboard_login():
     global dashboard_passcode
     if request.method == "POST":
         code_entered = request.form.get("passcode", "").strip()
-        if code_entered == dashboard_passcode:
+        if _passcode_matches(code_entered):
             session["dashboard_authorized"] = True
             return redirect("/dashboard")
         return render_template("dashboard_login.html", error="Invalid passcode.")
@@ -6886,35 +6905,10 @@ load_active_event()
 if __name__ == "__main__":
     port  = int(os.environ.get("PORT", 5001))
     
-    # Gracefully free the port if occupied
-    import os, subprocess, signal
-    try:
-        if os.name == 'nt':
-            cmd = f"netstat -ano | findstr :{port}"
-            out = subprocess.check_output(cmd, shell=True).decode('utf-8', errors='ignore')
-            pids = set()
-            for line in out.strip().split('\n'):
-                line = line.strip()
-                if not line:
-                    continue
-                parts = line.split()
-                if len(parts) >= 5 and "LISTENING" in parts:
-                    pid = parts[-1]
-                    try:
-                        pids.add(int(pid))
-                    except ValueError:
-                        pass
-            my_pid = os.getpid()
-            for pid in pids:
-                if pid != my_pid:
-                    print(f"[*] Port {port} occupied by PID {pid}. Terminating it for a clean start...")
-                    subprocess.run(f"taskkill /F /PID {pid}", shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                    time.sleep(1.0)
-        else:
-            subprocess.run(f"fuser -k -n tcp {port}", shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            time.sleep(1.0)
-    except Exception as e:
-        print(f"[*] Note: Port check completed: {e}")
+    # Stop with a clear message rather than closing whatever else is using the port
+    with _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM) as _probe:
+        if _probe.connect_ex(("127.0.0.1", port)) == 0:
+            sys.exit(f"Port {port} is already in use. Close that program, or set the PORT environment variable to another number.")
 
     debug = os.environ.get("FLASK_DEBUG", "false").lower() == "true"
     lan_ip = get_lan_ip()

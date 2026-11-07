@@ -5,8 +5,8 @@ An advanced, enterprise-grade QR code and barcode check-in system built on Flask
 ---
 
 ## ── Quick Links ──
-- 📖 [Complete Functions Guide (FUNCTIONS.md)](file:///c:/Users/ashin/Downloads/qr_checkin_system_upgraded/qr_checkin_system/FUNCTIONS.md)
-- 💡 [Detailed Troubleshooting & Setup (HELP.md)](file:///c:/Users/ashin/Downloads/qr_checkin_system_upgraded/qr_checkin_system/HELP.md)
+- 📖 [Complete Functions Guide (FUNCTIONS.md)](FUNCTIONS.md)
+- 💡 [Detailed Troubleshooting & Setup (HELP.md)](HELP.md)
 
 ---
 

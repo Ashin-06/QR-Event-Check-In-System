@@ -247,7 +247,7 @@ The following table documents every problem identified, the root cause analysis,
 | **10** | **UI & Typography** | Distorted, pixelated fonts on tables and cards | Default CSS variable `--font` used art-deco `'Syne'` font. | Replaced global font stack with modern, crisp **'Plus Jakarta Sans'** and **'Inter'**, dramatically improving legibility. | ✅ Fixed |
 | **11** | **Info Tooltips** | Tooltip text invisible or unstyled `i` text | Tooltips inside cards were clipped by `overflow: hidden` on parent containers. | Built a **Global Floating Tooltip Engine** (`#global-floating-tooltip`) appended to `document.body`, calculating exact viewport positions dynamically. | ✅ Fixed |
 | **12** | **Documentation** | Help Guide button showed error loading HELP.md | Backend was missing the `/help_content` API endpoint. | Implemented `/help_content` in `app.py` to serve formatted markdown directly to the dashboard's interactive modal. | ✅ Fixed |
-| **13** | **System Launchers** | Confusing startup instructions | Missing root directory launcher. | Created [START_SYSTEM.bat](file:///c:/Users/ashin/Downloads/qr_checkin_system_upgraded/START_SYSTEM.bat) in workspace root and upgraded [run_system.bat](file:///c:/Users/ashin/Downloads/qr_checkin_system_upgraded/qr_checkin_system/run_system.bat) with automated browser launch. | ✅ Fixed |
+| **13** | **System Launchers** | Confusing startup instructions | Missing root directory launcher. | Created [START_SYSTEM.bat](START_SYSTEM.bat) in workspace root and upgraded [run_system.bat](run_system.bat) with automated browser launch. | ✅ Fixed |
 
 ---
 
@@ -307,7 +307,7 @@ Every feature and regression suite has been verified using automated end-to-end 
 ## 🚀 7. How to Operate the System
 
 1. **Launch the Server**:
-   * Double-click [`START_SYSTEM.bat`](file:///c:/Users/ashin/Downloads/qr_checkin_system_upgraded/START_SYSTEM.bat) in the root directory.
+   * Double-click [`START_SYSTEM.bat`](START_SYSTEM.bat) in the root directory.
    * The server will initialize on `http://localhost:5001` and automatically open your default browser.
 2. **Access from Other Devices (LAN / Mobile)**:
    * Connect scanner phones to the same Wi-Fi and open the LAN IP shown at the top of the dashboard.
