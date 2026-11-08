@@ -2,6 +2,7 @@ import eventlet
 eventlet.monkey_patch()
 
 import unittest
+from unittest.mock import patch
 import json
 import os
 import shutil
@@ -229,6 +230,45 @@ class TestUpgradedFeatures(unittest.TestCase):
             "channel": "email"
         })
         self.assertIn(res.status_code, [200, 400])
+
+    # Messaging, with the mail and phone services replaced so nothing is actually sent
+    def _with_mail_credentials(self):
+        cfg = app.get_event_config()
+        cfg.update(email_sender="organiser@example.com", email_password="test-only-app-password")
+        app.save_event_config(cfg)
+
+    def test_email_is_built_for_the_right_attendee(self):
+        self._with_mail_credentials()
+        with patch("yagmail.SMTP") as smtp:
+            res = self.app_client.post("/send_email_single", json={"reg_no": "REG001"})
+        self.assertEqual(res.status_code, 200, res.get_json())
+        smtp.assert_called_once_with(user="organiser@example.com", password="test-only-app-password")
+        sent = smtp.return_value.send.call_args.kwargs
+        self.assertEqual(sent["to"], "alice@example.com")
+        self.assertTrue(sent["subject"])
+        self.assertTrue(sent["attachments"], "the QR code should be attached")
+
+    def test_email_without_credentials_says_so(self):
+        with patch("yagmail.SMTP") as smtp:
+            res = self.app_client.post("/send_email_single", json={"reg_no": "REG001"})
+        self.assertEqual(res.status_code, 400)
+        self.assertIn("credentials", res.get_json()["message"])
+        smtp.assert_not_called()
+
+    def test_email_to_an_unknown_attendee_is_refused(self):
+        self._with_mail_credentials()
+        with patch("yagmail.SMTP") as smtp:
+            res = self.app_client.post("/send_email_single", json={"reg_no": "NOPE"})
+        self.assertEqual(res.status_code, 400)
+        smtp.return_value.send.assert_not_called()
+
+    def test_whatsapp_manual_mode_returns_the_number_to_message(self):
+        res = self.app_client.post("/send_whatsapp_single", json={"reg_no": "REG002"})
+        self.assertEqual(res.status_code, 200, res.get_json())
+        data = res.get_json()
+        self.assertEqual(data.get("method"), "manual")
+        self.assertIn("1234567891", str(data.get("phone")))
+
 
 class TestPasscodeLockout(unittest.TestCase):
     def test_wrong_tries_lock_out_even_the_right_code(self):
