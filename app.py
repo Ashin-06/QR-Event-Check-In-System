@@ -30,6 +30,7 @@ eventlet.monkey_patch()
 import hmac
 import secrets
 import sys
+from urllib.parse import urlparse
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
 if hasattr(sys.stderr, "reconfigure"):
@@ -143,7 +144,27 @@ def is_dashboard_authorized() -> bool:
 # ── App setup ────────────────────────────────────────────────────────────────
 app = Flask(__name__)
 app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", os.urandom(24).hex())
-socketio = SocketIO(app, cors_allowed_origins=os.environ.get("CORS_ORIGIN", "*"))
+socketio = SocketIO(app, cors_allowed_origins=os.environ.get("CORS_ORIGIN") or None)  # same origin unless set
+
+# Scanners, check-ins and the QR images sent to attendees stay open. Everything else is for the organiser.
+PUBLIC_RULES = {"/", "/network_info", "/scan", "/stats", "/dashboard", "/dashboard_login",
+                "/qrcodes/<path:filename>", "/barcodes/<path:filename>", "/static/<path:filename>"}
+
+
+@app.before_request
+def _access_guard():
+    if request.method not in ("GET", "HEAD", "OPTIONS"):
+        source = request.headers.get("Origin") or request.headers.get("Referer")
+        if source and urlparse(source).netloc != request.host:
+            return jsonify(message="Requests from other websites are refused."), 403
+    if request.url_rule is None or request.url_rule.rule in PUBLIC_RULES:
+        return None
+    if not is_dashboard_authorized():
+        return jsonify(message="Sign in to the dashboard first."), 401
+    if request.method not in ("GET", "HEAD") and dashboard_sharing == "public" \
+            and not (is_localhost_request() or session.get("dashboard_authorized")):
+        return jsonify(message="The public dashboard is view-only."), 403
+    return None
 
 @app.after_request
 def add_header(r):
@@ -973,6 +994,8 @@ def _on_register_device(data):
 
 @socketio.on("register_dashboard")
 def _on_register_dashboard(data):
+    if not is_dashboard_authorized():
+        return
     with _sockets_lock:
         if request.sid in connected_sockets:
             connected_sockets[request.sid]["type"] = "dashboard"

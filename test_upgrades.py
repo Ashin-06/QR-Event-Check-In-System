@@ -246,5 +246,28 @@ class TestPasscodeLockout(unittest.TestCase):
             self.assertTrue(s.get("dashboard_authorized"))
 
 
+class TestAccessFromOtherDevices(unittest.TestCase):
+    def setUp(self):
+        app.app.config["TESTING"] = True
+        self.remote = app.app.test_client()
+        self.remote.environ_base["REMOTE_ADDR"] = "192.168.1.50"
+        self.host = {"base_url": "http://192.168.1.5:5001"}
+
+    def test_organiser_actions_need_the_passcode(self):
+        for path in ("/send_emails", "/start_tunnel", "/save_config", "/import_csv"):
+            self.assertEqual(self.remote.post(path, json={}, **self.host).status_code, 401, path)
+        for path in ("/get_config", "/data_csv", "/download/csv"):
+            self.assertEqual(self.remote.get(path, **self.host).status_code, 401, path)
+
+    def test_scanner_pages_stay_open(self):
+        self.assertEqual(self.remote.get("/", **self.host).status_code, 200)
+        self.assertEqual(self.remote.get("/stats", **self.host).status_code, 200)
+
+    def test_other_websites_are_refused(self):
+        local = app.app.test_client()
+        r = local.post("/save_config", json={}, headers={"Origin": "https://evil.example"}, base_url="http://localhost:5001")
+        self.assertEqual(r.status_code, 403)
+
+
 if __name__ == "__main__":
     unittest.main()
